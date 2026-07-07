@@ -47,6 +47,8 @@ run_system_checks() {
     check_root
     check_os
     check_internet
+    check_ram
+    check_disk
 
     line
 }
@@ -80,3 +82,35 @@ check_internet() {
     fi
 
 }
+
+check_ram() {
+
+    info "Checking system memory..."
+
+    # Get total RAM in MB
+    TOTAL_RAM_MB=$(free -m | awk '/^Mem:/ {print $2}')
+
+    if [[ "$TOTAL_RAM_MB" -lt 2048 ]]; then
+        warning "Low memory detected (${TOTAL_RAM_MB} MB). Minimum recommended is 2048 MB."
+    else
+        success "Memory detected: ${TOTAL_RAM_MB} MB."
+    fi
+
+}
+
+check_disk() {
+
+    info "Checking available disk space..."
+
+    # Get available disk space in GB
+    FREE_DISK_GB=$(df -BG / | awk 'NR==2 {gsub("G","",$4); print $4}')
+
+    if [[ "$FREE_DISK_GB" -lt 10 ]]; then
+        error "Insufficient disk space (${FREE_DISK_GB} GB). Minimum required is 10 GB."
+    elif [[ "$FREE_DISK_GB" -lt 20 ]]; then
+        warning "Low disk space (${FREE_DISK_GB} GB). Recommended is at least 20 GB."
+    else
+        success "Available disk space: ${FREE_DISK_GB} GB."
+    fi
+
+}	
