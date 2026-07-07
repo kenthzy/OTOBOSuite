@@ -50,6 +50,8 @@ run_system_checks() {
     check_ram
     check_disk
     check_apache
+    check_mariadb
+    check_perl
 
     line
 }
@@ -130,5 +132,37 @@ check_apache() {
     else
         warning "Apache is installed but not running."
     fi
+
+}
+
+check_mariadb() {
+
+    info "Checking MariaDB..."
+
+    if ! command -v mariadb >/dev/null 2>&1 && ! command -v mysql >/dev/null 2>&1; then
+        warning "MariaDB is not installed."
+        return
+    fi
+
+    if systemctl is-active --quiet mariadb; then
+        success "MariaDB is installed and running."
+    else
+        warning "MariaDB is installed but not running."
+    fi
+
+}
+
+check_perl() {
+
+    info "Checking Perl..."
+
+    if ! command -v perl >/dev/null 2>&1; then
+        warning "Perl is not installed."
+        return
+    fi
+
+    PERL_VERSION=$(perl -e 'print $^V')
+
+    success "Perl installed (${PERL_VERSION})."
 
 }
