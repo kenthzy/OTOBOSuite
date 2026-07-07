@@ -49,6 +49,7 @@ run_system_checks() {
     check_internet
     check_ram
     check_disk
+    check_apache
 
     line
 }
@@ -114,3 +115,20 @@ check_disk() {
     fi
 
 }	
+
+check_apache() {
+
+    info "Checking Apache..."
+
+    if ! command -v apache2 >/dev/null 2>&1; then
+        warning "Apache is not installed."
+        return
+    fi
+
+    if systemctl is-active --quiet apache2; then
+        success "Apache is installed and running."
+    else
+        warning "Apache is installed but not running."
+    fi
+
+}
