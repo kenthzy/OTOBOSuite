@@ -45,6 +45,15 @@ run_system_checks() {
     line
 
     check_root
+    check_os
 
     line
+}
+	
+check_os() {
+
+    info "Checking operating system..."
+
+    # Code to detect Ubuntu will go here
+
 }
