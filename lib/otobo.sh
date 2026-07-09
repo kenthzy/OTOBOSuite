@@ -79,6 +79,11 @@ configure_apache() {
     echo "ServerName localhost" >/etc/apache2/conf-available/servername.conf
     a2enconf servername >/dev/null 2>&1 || true
 
+    if ! apache2ctl configtest 2>/dev/null; then
+        register_result "OTOBO_Apache" "FAIL" "Apache config syntax invalid"
+        error "Apache configuration syntax error in zzz_otobo.conf"
+    fi
+
     register_result "OTOBO_Apache" "PASS" "Apache virtual host configured"
     success "Apache configuration for OTOBO completed."
 }
@@ -107,8 +112,11 @@ set_permissions() {
 
     chown -R otobo:www-data /opt/otobo
     find /opt/otobo -type d -exec chmod 755 {} \;
-    find /opt/otobo -type f -exec chmod 644 {} \;
-    chmod 755 /opt/otobo/bin/* >/dev/null 2>&1 || true
+    find /opt/otobo -type f -not -executable -exec chmod 644 {} \;
+    chmod 755 /opt/otobo/bin/* 2>/dev/null
+    true
+    chmod 755 /opt/otobo/var/httpd/htdocs/*.pl 2>/dev/null
+    true
 
     register_result "OTOBO_Permissions" "PASS" "File permissions set (otobo:www-data)"
     success "OTOBO file permissions configured."
@@ -188,10 +196,27 @@ write_config() {
 restart_services() {
     info "Restarting Apache..."
 
+    if ! apache2ctl configtest 2>/dev/null; then
+        register_result "OTOBO_Services" "FAIL" "Apache config syntax invalid"
+        error "Apache configuration syntax error — refusing to restart"
+    fi
+
     systemctl restart apache2
 
-    register_result "OTOBO_Services" "PASS" "Apache restarted"
-    success "Apache restarted."
+    if ! systemctl is-active --quiet apache2; then
+        register_result "OTOBO_Services" "FAIL" "Apache failed to start"
+        error "Apache failed to start after restart"
+    fi
+
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost/otobo/installer.pl |
+        grep -qE '200|302'; then
+        register_result "OTOBO_Services" "PASS" "Apache restarted and serving OTOBO"
+        success "Apache restarted and serving OTOBO."
+    else
+        register_result "OTOBO_Services" "WARN" "Apache restarted but /otobo/ not reachable"
+        warning "Apache restarted but /otobo/installer.pl is not responding."
+        warning "Run 'sudo ./verify.sh' or 'sudo ./repair.sh --check' to diagnose."
+    fi
 }
 
 show_completion() {
