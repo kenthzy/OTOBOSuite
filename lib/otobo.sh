@@ -162,6 +162,7 @@ write_config() {
     if [[ -f "$dist_file" && ! -f "$pm_file" ]]; then
         cp "$dist_file" "$pm_file"
         chmod 644 "$pm_file"
+        chown otobo:www-data "$pm_file"
         info "Created Kernel/Config.pm from Config.pm.dist template."
     fi
 
@@ -195,6 +196,7 @@ write_config() {
 	EOF
 
     chmod 644 "$config_file"
+    chown otobo:www-data "$config_file"
 
     register_result "OTOBO_Config" "PASS" "OTOBO database configuration written"
     success "OTOBO database configuration written."
