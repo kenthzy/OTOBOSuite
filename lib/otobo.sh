@@ -161,7 +161,7 @@ write_config() {
 
     if [[ -f "$dist_file" && ! -f "$pm_file" ]]; then
         cp "$dist_file" "$pm_file"
-        chmod 644 "$pm_file"
+        chmod 664 "$pm_file"
         chown otobo:www-data "$pm_file"
         info "Created Kernel/Config.pm from Config.pm.dist template."
     fi
