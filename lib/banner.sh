@@ -2,7 +2,7 @@
 
 show_banner() {
 
-    clear
+    [[ -n "$TERM" ]] && clear
 
     echo -e "${LIGHT_BLUE}"
 
