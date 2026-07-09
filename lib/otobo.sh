@@ -38,7 +38,7 @@ download_otobo() {
         error "Could not find extracted OTOBO directory."
     fi
 
-    mkdir -p /opt/otobo
+    mkdir -p /opt/otobo /opt/otobo/Kernel/Config/Files
     mv "$otobo_dir"/* /opt/otobo/
     rm -f /tmp/otobo-latest-11.0.tar.gz
     cd /
@@ -152,9 +152,9 @@ setup_database() {
 
 write_config() {
     local creds_file="/root/.otobo_db_credentials"
-    local config_file="/opt/otobo/Kernel/Config.pm"
+    local config_file="/opt/otobo/Kernel/Config/Files/AAInstaller.pm"
 
-    info "Writing Kernel/Config.pm..."
+    info "Writing OTOBO database configuration..."
 
     if [[ ! -f "$creds_file" ]]; then
         register_result "OTOBO_Config" "FAIL" "Credentials file not found"
@@ -165,21 +165,10 @@ write_config() {
     source "$creds_file"
 
     cat >"$config_file" <<-EOF
-		package Kernel::Config;
+		package Kernel::Config::Files::AAInstaller;
 		use strict;
 		use warnings;
 		use utf8;
-
-		use Kernel::Config::Defaults;
-
-		our \@ISA = qw(Kernel::Config::Defaults);
-
-		sub new {
-		    my \$type = shift;
-		    my \$Self = Kernel::Config::Defaults->new(\@_);
-		    \$Self->Load();
-		    return \$Self;
-		}
 
 		sub Load {
 		    my \$Self = shift;
@@ -198,8 +187,8 @@ write_config() {
 
     chmod 644 "$config_file"
 
-    register_result "OTOBO_Config" "PASS" "Kernel/Config.pm written"
-    success "OTOBO configuration file written."
+    register_result "OTOBO_Config" "PASS" "OTOBO database configuration written"
+    success "OTOBO database configuration written."
 }
 
 restart_services() {
