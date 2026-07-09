@@ -102,7 +102,7 @@ configure_systemd() {
     systemctl daemon-reload
 
     systemctl enable otobo-daemon >/dev/null 2>&1 || true
-    systemctl enable otobo-scheduler >/dev/null 2>&1 || true
+    systemctl enable otobo-web >/dev/null 2>&1 || true
 
     register_result "OTOBO_Systemd" "PASS" "systemd services installed and enabled"
     success "systemd services configured (enabled, not started)."
@@ -260,7 +260,7 @@ show_completion() {
     echo -e "│                                                                                     │"
     echo -e "│  ${BOLD}After web installer:${NC}                                                        │"
     echo -e "│  sudo systemctl start otobo-daemon                                                  │"
-    echo -e "│  sudo systemctl start otobo-scheduler                                               │"
+    echo -e "│  sudo systemctl start otobo-web                                                    │"
     echo -e "${BOLD}│                                                                              │${NC}"
     echo -e "${BOLD}└──────────────────────────────────────────────────────────────────────────────┘${NC}"
     echo
