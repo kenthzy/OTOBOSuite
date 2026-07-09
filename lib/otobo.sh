@@ -251,6 +251,7 @@ show_completion() {
     echo -e "${BOLD}│                                                                              │${NC}"
     echo -e "│  ${BOLD}Database credentials:${NC}                                                      │"
     echo -e "│  ${YELLOW}/root/.otobo_db_credentials${NC}                                             │"
+    echo -e "│  ${YELLOW}sudo cat /root/.otobo_db_credentials${NC}                                       │"
     echo -e "${BOLD}│                                                                              │${NC}"
     echo -e "│  ${BOLD}Next Steps:${NC}                                                                │"
     echo -e "│  1. Open the URL above in your browser.                                            │"
