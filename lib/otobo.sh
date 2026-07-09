@@ -170,10 +170,13 @@ write_config() {
 		use warnings;
 		use utf8;
 
+		use Kernel::Config::Defaults;
+
+		our \@ISA = qw(Kernel::Config::Defaults);
+
 		sub new {
 		    my \$type = shift;
-		    my \$Self = {};
-		    bless(\$Self, \$type);
+		    my \$Self = Kernel::Config::Defaults->new(\@_);
 		    \$Self->Load();
 		    return \$Self;
 		}
@@ -185,7 +188,7 @@ write_config() {
 		    \$Self->{Database}     = '${OTOBO_DB_NAME}';
 		    \$Self->{DatabaseUser} = '${OTOBO_DB_USER}';
 		    \$Self->{DatabasePw}   = '${OTOBO_DB_PASSWORD}';
-		    \$Self->{DatabaseDSN} = 'DBI:mysql:database=${OTOBO_DB_NAME};host=${OTOBO_DB_HOST};';
+		    \$Self->{DatabaseDSN}  = 'DBI:mysql:database=${OTOBO_DB_NAME};host=${OTOBO_DB_HOST};';
 
 		    return 1;
 		}
@@ -208,6 +211,8 @@ restart_services() {
     fi
 
     systemctl restart apache2
+
+    sleep 3
 
     if ! systemctl is-active --quiet apache2; then
         register_result "OTOBO_Services" "FAIL" "Apache failed to start"
