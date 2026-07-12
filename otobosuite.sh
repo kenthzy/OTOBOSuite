@@ -32,7 +32,7 @@ show_menu() {
     echo "    2) Repair OTOBO           -- Diagnose and fix issues"
     echo "    3) Verify OTOBO           -- Post-install health check"
     echo "    4) Uninstall OTOBO        -- Remove OTOBO and components"
-    echo "    5) Upgrade OTOBO          -- Coming soon"
+    echo "    5) Upgrade OTOBO          -- Download, migrate, rollback"
     echo "    6) Configure SSL          -- Coming soon"
     echo "    7) Exit"
     echo
@@ -79,11 +79,7 @@ main() {
             2) run_script "repair.sh" "Repair OTOBO" ;;
             3) run_script "verify.sh" "Verify OTOBO" ;;
             4) run_script "uninstall.sh" "Uninstall OTOBO" ;;
-            5)
-                echo -e "${YELLOW}Upgrade feature is coming soon.${NC}"
-                echo
-                read -rp "Press Enter to return to menu..."
-                ;;
+            5) run_script "upgrade.sh" "Upgrade OTOBO" ;;
             6)
                 echo -e "${YELLOW}SSL/HTTPS configuration is coming soon.${NC}"
                 echo
