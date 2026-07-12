@@ -1,4 +1,4 @@
-# OTOBO 11 Native Installer
+# OTOBOSuite
 
 [![Lint](https://github.com/kenthzy/otobo11-native-installer/actions/workflows/lint.yml/badge.svg)](https://github.com/kenthzy/otobo11-native-installer/actions/workflows/lint.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
