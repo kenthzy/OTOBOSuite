@@ -242,27 +242,27 @@ show_completion() {
     fi
 
     echo
-    echo -e "${BOLD}┌──────────────────────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${BOLD}│                    OTOBO 11 INSTALLATION COMPLETED                          │${NC}"
-    echo -e "${BOLD}├──────────────────────────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${BOLD}│                                                                              │${NC}"
-    echo -e "│  ${BOLD}URL:${NC}                                                                        │"
-    echo -e "│  ${LIGHT_BLUE}http://${server_ip}/otobo/installer.pl${NC}                               │"
-    echo -e "${BOLD}│                                                                              │${NC}"
-    echo -e "│  ${BOLD}Database credentials:${NC}                                                      │"
-    echo -e "│  ${YELLOW}/root/.otobo_db_credentials${NC}                                             │"
-    echo -e "│  ${YELLOW}sudo cat /root/.otobo_db_credentials${NC}                                       │"
-    echo -e "${BOLD}│                                                                              │${NC}"
-    echo -e "│  ${BOLD}Next Steps:${NC}                                                                │"
-    echo -e "│  1. Open the URL above in your browser.                                            │"
-    echo -e "│  2. Complete the OTOBO web installer.                                              │"
-    echo -e "│  3. Return to this terminal when finished.                                         │"
-    echo -e "│                                                                                     │"
-    echo -e "│  ${BOLD}After web installer:${NC}                                                        │"
-    echo -e "│  sudo systemctl start otobo-daemon                                                  │"
-    echo -e "│  sudo systemctl start otobo-web                                                    │"
-    echo -e "${BOLD}│                                                                              │${NC}"
-    echo -e "${BOLD}└──────────────────────────────────────────────────────────────────────────────┘${NC}"
+    echo -e "${BOLD}============================================================${NC}"
+    echo -e "${BOLD}$(printf '%*s' 28 "")OTOBO 11 INSTALLATION COMPLETED${NC}"
+    echo -e "${BOLD}============================================================${NC}"
+    echo
+    echo -e " ${BOLD}URL:${NC}"
+    echo -e "    ${LIGHT_BLUE}http://${server_ip}/otobo/installer.pl${NC}"
+    echo
+    echo -e " ${BOLD}Database credentials:${NC}"
+    echo -e "    ${YELLOW}/root/.otobo_db_credentials${NC}"
+    echo -e "    ${YELLOW}sudo cat /root/.otobo_db_credentials${NC}"
+    echo
+    echo -e " ${BOLD}Next Steps:${NC}"
+    echo -e "    1. Open the URL above in your browser."
+    echo -e "    2. Complete the OTOBO web installer."
+    echo -e "    3. Return to this terminal when finished."
+    echo
+    echo -e " ${BOLD}After web installer:${NC}"
+    echo -e "    sudo systemctl start otobo-daemon"
+    echo -e "    sudo systemctl start otobo-web"
+    echo
+    echo -e "${BOLD}============================================================${NC}"
     echo
 
     pause

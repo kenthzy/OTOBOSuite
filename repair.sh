@@ -536,9 +536,9 @@ show_repair_summary() {
     done
 
     echo
-    echo -e "${BOLD}┌──────────────────────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${BOLD}│                           REPAIR SUMMARY                                     │${NC}"
-    echo -e "${BOLD}├──────────────────┬──────────┬────────────────────────────────────────────────┤${NC}"
+    echo -e "${BOLD}============================================================${NC}"
+    echo -e "${BOLD}$(printf '%*s' 28 "")REPAIR SUMMARY${NC}"
+    echo -e "${BOLD}============================================================${NC}"
 
     for i in "${!REPAIR_NAMES[@]}"; do
         local name="${REPAIR_NAMES[$i]}"
@@ -566,10 +566,10 @@ show_repair_summary() {
             esac
         fi
 
-        printf "│ %-16s │ %-8b │ %-44s │\n" "$name" "$formatted_status" "$message"
+        printf " %-16s  %-8b  %s\n" "$name" "$formatted_status" "$message"
     done
 
-    echo -e "${BOLD}├──────────────────┴──────────┴────────────────────────────────────────────────┤${NC}"
+    echo -e "${BOLD}============================================================${NC}"
     local total=$((pass_count + fixed_count + fail_count + skip_count + warn_count))
     local result_line="Result: ${GREEN}${pass_count} PASS${NC}"
     result_line+=", ${YELLOW}${warn_count} WARN${NC}"
@@ -577,8 +577,8 @@ show_repair_summary() {
     result_line+=", ${RED}${fail_count} FAIL${NC}, ${MAGENTA}${skip_count} SKIP${NC}"
     result_line+=" (${total} total)"
 
-    echo -e "│ ${result_line} │"
-    echo -e "${BOLD}└──────────────────────────────────────────────────────────────────────────────┘${NC}"
+    echo -e " ${result_line}"
+    echo -e "${BOLD}============================================================${NC}"
     echo
 }
 

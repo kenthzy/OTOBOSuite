@@ -217,7 +217,6 @@ validation_summary() {
     local formatted_status
     local col1_width=16
     local col2_width=10
-    local col3_width=44
 
     for i in "${!VALIDATION_NAMES[@]}"; do
         status="${VALIDATION_STATUSES[$i]}"
@@ -234,9 +233,9 @@ validation_summary() {
     done
 
     echo
-    echo -e "${BOLD}┌──────────────────────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${BOLD}│                        SYSTEM VALIDATION REPORT                              │${NC}"
-    echo -e "${BOLD}├──────────────────┬────────────┬────────────────────────────────────────────────┤${NC}"
+    echo -e "${BOLD}============================================================${NC}"
+    echo -e "${BOLD}$(printf '%*s' 22 "")SYSTEM VALIDATION REPORT${NC}"
+    echo -e "${BOLD}============================================================${NC}"
 
     for i in "${!VALIDATION_NAMES[@]}"; do
         check_name="${VALIDATION_NAMES[$i]}"
@@ -251,10 +250,10 @@ validation_summary() {
             SKIP) formatted_status="${MAGENTA}SKIP${NC}" ;;
         esac
 
-        printf "│ %-${col1_width}s │ %-${col2_width}b │ %-${col3_width}s │\n" "$check_name" "$formatted_status" "$message"
+        printf " %-${col1_width}s  %-${col2_width}b  %s\n" "$check_name" "$formatted_status" "$message"
     done
 
-    echo -e "${BOLD}├──────────────────┴────────────┴────────────────────────────────────────────────┤${NC}"
+    echo -e "${BOLD}============================================================${NC}"
 
     local total=$((pass_count + warn_count + fail_count + info_count + skip_count))
     local result_line="Result: ${GREEN}${pass_count} PASS${NC}"
@@ -264,8 +263,8 @@ validation_summary() {
     result_line+=", ${MAGENTA}${skip_count} SKIP${NC}"
     result_line+=" (${total} total)"
 
-    echo -e "│ ${result_line} │"
-    echo -e "${BOLD}└──────────────────────────────────────────────────────────────────────────────┘${NC}"
+    echo -e " ${result_line}"
+    echo -e "${BOLD}============================================================${NC}"
     echo
 
     if [[ "$has_fail" -eq 1 ]]; then
