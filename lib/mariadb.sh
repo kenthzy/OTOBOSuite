@@ -5,10 +5,74 @@
 # MariaDB Installation Module
 #############################################
 
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+prompt_db_credentials() {
+    local creds_file="/root/.otobo_db_credentials"
+
+    source "$SCRIPT_DIR/lib/config.sh"
+
+    # Silent mode — values from config file
+    if load_config; then
+        OTOBO_DB_NAME=$(config_value "DB_NAME" "otobo")
+        OTOBO_DB_USER=$(config_value "DB_USER" "otobo")
+        local cfg_pass
+        cfg_pass=$(config_value "DB_PASSWORD" "")
+        if [[ -n "$cfg_pass" ]]; then
+            OTOBO_DB_PASSWORD="$cfg_pass"
+            info "Using DB credentials from $CONFIG_FILE"
+            return
+        fi
+    fi
+
+    # Interactive mode
+    echo
+    echo -e "${BOLD}Database Configuration${NC}"
+    echo -e "${BOLD}----------------------${NC}"
+    echo
+    info "Press Enter to accept the default value shown in brackets."
+    echo
+
+    read -rp " Database name [otobo]: " input_name
+    OTOBO_DB_NAME="${input_name:-otobo}"
+
+    read -rp " Database user [otobo]: " input_user
+    OTOBO_DB_USER="${input_user:-otobo}"
+
+    echo
+    info "Password options:"
+    echo "   1) Generate a random password (recommended)"
+    echo "   2) Type your own password"
+    echo
+    read -rp " Choose [1/2] (default: 1): " pw_choice
+
+    if [[ "$pw_choice" == "2" ]]; then
+        echo
+        read -rsp " Enter password for DB user '${OTOBO_DB_USER}': " OTOBO_DB_PASSWORD
+        echo
+        read -rsp " Confirm password: " pw_confirm
+        echo
+        echo
+        if [[ "$OTOBO_DB_PASSWORD" != "$pw_confirm" ]]; then
+            error "Passwords do not match."
+        fi
+        if [[ -z "$OTOBO_DB_PASSWORD" ]]; then
+            error "Password cannot be empty."
+        fi
+    else
+        OTOBO_DB_PASSWORD=$(openssl rand -base64 32 | head -c32 && echo)
+        info "Random password generated."
+    fi
+}
+
 install_mariadb() {
     local db_root_password
-    local otobo_db_password
     local creds_file="/root/.otobo_db_credentials"
+
+    source "$SCRIPT_DIR/lib/config.sh"
+    load_config
+
+    prompt_db_credentials
 
     info "Installing MariaDB server..."
 
@@ -60,10 +124,9 @@ install_mariadb() {
 
     success "MariaDB configuration applied."
 
-    info "Generating database credentials..."
+    info "Generating root password and writing credentials..."
 
     db_root_password=$(openssl rand -base64 32 | head -c32 && echo)
-    otobo_db_password=$(openssl rand -base64 32 | head -c32 && echo)
 
     cat >"$creds_file" <<-EOF
 		# OTOBO Database Credentials
@@ -73,9 +136,9 @@ install_mariadb() {
 		DB_ROOT_PASSWORD=${db_root_password}
 		OTOBO_DB_HOST=localhost
 		OTOBO_DB_PORT=3306
-		OTOBO_DB_NAME=otobo
-		OTOBO_DB_USER=otobo
-		OTOBO_DB_PASSWORD=${otobo_db_password}
+		OTOBO_DB_NAME=${OTOBO_DB_NAME}
+		OTOBO_DB_USER=${OTOBO_DB_USER}
+		OTOBO_DB_PASSWORD=${OTOBO_DB_PASSWORD}
 	EOF
 
     chmod 600 "$creds_file"

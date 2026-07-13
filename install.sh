@@ -10,7 +10,10 @@ set -e
 source lib/colors.sh
 source lib/banner.sh
 source lib/functions.sh
+source lib/config.sh
 source lib/validation.sh
+
+load_config
 
 show_banner
 pause
