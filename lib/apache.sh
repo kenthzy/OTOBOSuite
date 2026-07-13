@@ -1,74 +1,66 @@
 #!/usr/bin/env bash
 
-#############################################
-# OTOBOSuite - OTOBO Management Suite
-# Apache Installation Module
-#############################################
-
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-
-prompt_web_server() {
-    source "$SCRIPT_DIR/lib/config.sh"
-    load_config
-
-    local cfg_ws
-    cfg_ws=$(config_value "WEB_SERVER" "")
-
-    if [[ -n "$cfg_ws" ]]; then
-        WEB_SERVER="$cfg_ws"
-        info "Using web server from config file: $WEB_SERVER"
-        return
-    fi
-
-    echo
-    echo -e "${BOLD}Web Server Selection${NC}"
-    echo -e "${BOLD}-------------------${NC}"
-    echo
-    echo " Choose your web server:"
-    echo "   1) Apache (default)     — mod_perl, mpm_prefork"
-    echo "   2) nginx + Starman      — Reverse proxy + PSGI"
-    echo
-    read -rp " Enter your choice [1/2] (default: 1): " ws_choice
-
-    if [[ "$ws_choice" == "2" ]]; then
-        WEB_SERVER="nginx"
-    else
-        WEB_SERVER="apache"
-    fi
+install_apache() {
+	info "Installing Apache with mod_perl..."
+	DEBCONF_FRONTEND=noninteractive apt-get install -y apache2 libapache2-mod-perl2 || die "Failed to install Apache"
+	a2enmod perl
+	a2enmod rewrite
+	a2enmod headers
+	a2enmod ssl
+	register_result "Apache Install" "OK" "Apache with mod_perl installed"
 }
 
-install_apache() {
-    info "Installing Apache and mod_perl..."
+configure_apache_site() {
+	local fqdn="$1"
+	local otobo_root="$2"
+	local ssl_mode="${3:-none}"
 
-    apt-get install -y apache2 libapache2-mod-perl2
+	cat >/etc/apache2/sites-available/otobo.conf <<APACHE
+<VirtualHost *:80>
+    ServerName ${fqdn}
+    DocumentRoot ${otobo_root}
 
-    success "Apache and mod_perl installed."
+    <Directory ${otobo_root}>
+        AllowOverride All
+        Require all granted
+    </Directory>
 
-    info "Enabling required Apache modules..."
+    <Location /otobo>
+        SetHandler perl-script
+        PerlResponseHandler ModPerl::Registry
+        PerlOptions +ParseHeaders
+        Options +ExecCGI
+    </Location>
 
-    a2enmod perl
-    a2enmod deflate
-    a2enmod headers
-    a2enmod rewrite
-    a2enmod proxy
-    a2enmod proxy_http
-    a2enmod ssl
+    ErrorLog \${APACHE_LOG_DIR}/otobo_error.log
+    CustomLog \${APACHE_LOG_DIR}/otobo_access.log combined
+</VirtualHost>
+APACHE
 
-    success "Required Apache modules enabled."
+	if [ "$ssl_mode" = "self-signed" ] || [ "$ssl_mode" = "letsencrypt" ]; then
+		cat >/etc/apache2/sites-available/otobo-ssl.conf <<APACHESSL
+<VirtualHost *:443>
+    ServerName ${fqdn}
+    DocumentRoot ${otobo_root}
 
-    info "Switching to mpm_prefork for mod_perl compatibility..."
+    SSLEngine on
+    SSLCertificateFile /etc/ssl/certs/otobo.crt
+    SSLCertificateKeyFile /etc/ssl/private/otobo.key
 
-    a2dismod mpm_event
-    a2enmod mpm_prefork
+    <Directory ${otobo_root}>
+        AllowOverride All
+        Require all granted
+    </Directory>
 
-    success "Apache MPM set to prefork."
+    ErrorLog \${APACHE_LOG_DIR}/otobo_ssl_error.log
+    CustomLog \${APACHE_LOG_DIR}/otobo_ssl_access.log combined
+</VirtualHost>
+APACHESSL
+		a2ensite otobo-ssl
+	fi
 
-    info "Starting and enabling Apache..."
-
-    systemctl enable apache2
-    systemctl restart apache2
-
-    success "Apache started and enabled."
-
-    register_result "ApacheInstall" "PASS" "Apache 2.4 with mod_perl, mpm_prefork"
+	a2dissite 000-default
+	a2ensite otobo
+	systemctl reload apache2
+	register_result "Apache Site" "OK" "Site configured for $fqdn"
 }

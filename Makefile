@@ -1,15 +1,16 @@
-SHELL := /usr/bin/env bash
-SH_FILES := $(shell find . -name '*.sh' -not -path './.git/*' | sort)
+SHELL := bash
+SCRIPTS := $(shell find . -name '*.sh' -not -path './.git/*')
 
 .PHONY: lint format format-check check
 
 lint:
-	shellcheck $(SH_FILES)
+	@shellcheck $(SCRIPTS)
 
 format:
-	shfmt -w -i 4 -ci $(SH_FILES)
+	@shfmt -w $(SCRIPTS)
 
 format-check:
-	shfmt -d -i 4 -ci $(SH_FILES)
+	@shfmt -d $(SCRIPTS) | grep .; test $$? -eq 1
 
 check: lint format-check
+	@echo "All checks passed."

@@ -1,100 +1,163 @@
 #!/usr/bin/env bash
-
-#############################################
-# OTOBOSuite - OTOBO Management Suite
-# Main Menu Launcher
-#############################################
-
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-show_menu_banner() {
-    clear
-    echo -e "${LIGHT_BLUE}"
-    echo "============================================================"
-    echo
-    echo "                        OTOBOSuite"
-    echo
-    echo "                     Version 1.0"
-    echo
-    echo "        Automated by System Admin Kenneth"
-    echo
-    echo "============================================================"
-    echo -e "${NC}"
-}
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
 
 show_menu() {
-    echo
-    echo " What would you like to do?"
-    echo
-    echo "    1) Install OTOBO          -- Fresh installation (full stack)"
-    echo "    2) Repair OTOBO           -- Diagnose and fix issues"
-    echo "    3) Verify OTOBO           -- Post-install health check"
-    echo "    4) Uninstall OTOBO        -- Remove OTOBO and components"
-    echo "    5) Upgrade OTOBO          -- Download, migrate, rollback"
-    echo "    6) Configure SSL          -- Let's Encrypt or self-signed"
-    echo "    7) Backup OTOBO           -- Full, partial, or schedule cron"
-    echo "    8) Exit"
-    echo
-    read -rp " Enter your choice [1-8]: " choice
-    echo
+	echo ""
+	echo "========================================"
+	echo "  OTOBOSuite Management Menu"
+	echo "========================================"
+	echo "  1) Install OTOBO"
+	echo "  2) Repair OTOBO"
+	echo "  3) Verify OTOBO"
+	echo "  4) Uninstall OTOBO"
+	echo "  5) Upgrade OTOBO"
+	echo "  6) SSL Setup"
+	echo "  7) Backup"
+	echo "  8) Exit"
+	echo "========================================"
 }
 
-run_script() {
-    local script="$1"
-    local label="$2"
+handle_backup_menu() {
+	# shellcheck source=lib/backup.sh
+	source "$SCRIPT_DIR/lib/backup.sh"
+	# shellcheck source=lib/config.sh
+	source "$SCRIPT_DIR/lib/config.sh"
+	load_config
 
-    if [[ ! -f "$SCRIPT_DIR/$script" ]]; then
-        echo -e "${RED}[FAIL]${NC} $script not found."
-        echo
-        read -rp "Press Enter to return to menu..."
-        return
-    fi
+	echo ""
+	echo "========================================"
+	echo "  Backup Menu"
+	echo "========================================"
+	echo "  1) Full backup"
+	echo "  2) Partial backup (DB + config)"
+	echo "  3) List backups"
+	echo "  4) Restore from backup"
+	echo "  5) Schedule cron backup"
+	echo "  6) Back to main menu"
+	echo "========================================"
 
-    echo -e "${LIGHT_BLUE}Launching: $label${NC}"
-    echo
-    sleep 1
-
-    if [[ "$(id -u)" -ne 0 && "$script" != "verify.sh" ]]; then
-        echo -e "${YELLOW}This action requires root privileges. Re-running with sudo...${NC}"
-        echo
-        sudo "$SCRIPT_DIR/$script"
-    else
-        "$SCRIPT_DIR/$script"
-    fi
-
-    echo
-    read -rp "Press Enter to return to menu..."
+	local choice
+	read -r -p "Select option: " choice
+	case "$choice" in
+	1)
+		do_full_backup "${OTOBO_ROOT:-/opt/otobo}" "${DB_ENGINE:-mariadb}" "${DB_NAME:-otobo}" "${DB_USER:-otobo}" "${DB_PASS:-}"
+		;;
+	2)
+		do_partial_backup "${OTOBO_ROOT:-/opt/otobo}" "${DB_ENGINE:-mariadb}" "${DB_NAME:-otobo}" "${DB_USER:-otobo}" "${DB_PASS:-}"
+		;;
+	3)
+		list_backups
+		;;
+	4)
+		list_backups
+		echo ""
+		local backup_path
+		read -r -p "Enter backup path to restore: " backup_path
+		if [ -d "$backup_path" ]; then
+			restore_backup "$backup_path" "${OTOBO_ROOT:-/opt/otobo}" "${DB_ENGINE:-mariadb}" "${DB_NAME:-otobo}" "${DB_USER:-otobo}" "${DB_PASS:-}"
+		else
+			warn "Backup path not found: $backup_path"
+		fi
+		;;
+	5)
+		echo "Enter cron schedule (default: daily at 2am):"
+		local schedule
+		schedule=$(prompt_with_default "Schedule" "0 2 * * *")
+		schedule_cron_backup "$schedule" "$SCRIPT_DIR/backup.sh"
+		;;
+	6)
+		return
+		;;
+	*)
+		warn "Invalid option"
+		;;
+	esac
 }
 
-main() {
-    source "$SCRIPT_DIR/lib/colors.sh"
+handle_ssl_menu() {
+	# shellcheck source=lib/config.sh
+	source "$SCRIPT_DIR/lib/config.sh"
+	# shellcheck source=lib/ssl.sh
+	source "$SCRIPT_DIR/lib/ssl.sh"
+	load_config
 
-    while true; do
-        show_menu_banner
-        show_menu
+	echo ""
+	echo "========================================"
+	echo "  SSL Setup"
+	echo "========================================"
+	echo "  1) Self-signed certificate"
+	echo "  2) Let's Encrypt"
+	echo "  3) Back to main menu"
+	echo "========================================"
 
-        case "$choice" in
-            1) run_script "install.sh" "Install OTOBO" ;;
-            2) run_script "repair.sh" "Repair OTOBO" ;;
-            3) run_script "verify.sh" "Verify OTOBO" ;;
-            4) run_script "uninstall.sh" "Uninstall OTOBO" ;;
-            5) run_script "upgrade.sh" "Upgrade OTOBO" ;;
-            6) run_script "lib/ssl.sh" "Configure SSL/HTTPS" ;;
-            7) run_script "lib/backup.sh" "Backup OTOBO" ;;
-            8)
-                echo -e "${GREEN}Goodbye.${NC}"
-                echo
-                exit 0
-                ;;
-            *)
-                echo -e "${RED}Invalid choice. Please enter 1-8.${NC}"
-                echo
-                read -rp "Press Enter to continue..."
-                ;;
-        esac
-    done
+	local choice
+	read -r -p "Select option: " choice
+	case "$choice" in
+	1)
+		local fqdn
+		fqdn=$(prompt_with_default "FQDN" "${FQDN:-$(hostname -f)}")
+		setup_self_signed_ssl "$fqdn"
+		local web_server="${WEB_SERVER:-apache}"
+		if [ "$web_server" = "nginx" ]; then
+			configure_nginx_site "$fqdn" "${OTOBO_ROOT:-/opt/otobo}" "${STARMAN_PORT:-5000}" "self-signed"
+		else
+			configure_apache_site "$fqdn" "${OTOBO_ROOT:-/opt/otobo}" "self-signed"
+		fi
+		;;
+	2)
+		local fqdn email
+		fqdn=$(prompt_with_default "FQDN" "${FQDN:-$(hostname -f)}")
+		email=$(prompt_with_default "Email" "admin@${fqdn}")
+		configure_ssl "${WEB_SERVER:-apache}" "$fqdn" "$email" "letsencrypt"
+		;;
+	3)
+		return
+		;;
+	*)
+		warn "Invalid option"
+		;;
+	esac
 }
 
-main "$@"
+# Main loop
+while true; do
+	show_menu
+	choice=""
+	read -r -p "Select option: " choice
+	case "$choice" in
+	1)
+		bash "$SCRIPT_DIR/install.sh"
+		;;
+	2)
+		bash "$SCRIPT_DIR/repair.sh"
+		;;
+	3)
+		bash "$SCRIPT_DIR/verify.sh"
+		;;
+	4)
+		bash "$SCRIPT_DIR/uninstall.sh"
+		;;
+	5)
+		bash "$SCRIPT_DIR/upgrade.sh"
+		;;
+	6)
+		handle_ssl_menu
+		;;
+	7)
+		handle_backup_menu
+		;;
+	8)
+		echo "Goodbye!"
+		exit 0
+		;;
+	*)
+		warn "Invalid option. Please select 1-8."
+		;;
+	esac
+	echo ""
+	read -r -p "Press Enter to continue..."
+done
