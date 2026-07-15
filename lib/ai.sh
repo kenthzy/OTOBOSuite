@@ -58,13 +58,13 @@ install_otai_packages() {
 		uv_path=$(command -v uv)
 	fi
 	if [ -n "$uv_path" ]; then
-		sudo -u "$OTAI_USER" "$uv_path" venv "$OTAI_VENV_DIR" || die "Failed to create uv venv"
+		sudo -u "$OTAI_USER" "$uv_path" venv --seed "$OTAI_VENV_DIR" || die "Failed to create uv venv"
 		sudo -u "$OTAI_USER" "${OTAI_VENV_DIR}/bin/pip" install open-ticket-ai otai-otobo-znuny otai-hf-local || {
 			warn "pip install via uv venv failed, falling back to system pip3"
-			pip3 install open-ticket-ai otai-otobo-znuny otai-hf-local
+			pip3 install --break-system-packages open-ticket-ai otai-otobo-znuny otai-hf-local
 		}
 	else
-		pip3 install open-ticket-ai otai-otobo-znuny otai-hf-local || die "Failed to install OTAI packages"
+		pip3 install --break-system-packages open-ticket-ai otai-otobo-znuny otai-hf-local || die "Failed to install OTAI packages"
 	fi
 	register_result "OTAI Packages" "OK" "open-ticket-ai, otai-otobo-znuny, otai-hf-local installed"
 }
