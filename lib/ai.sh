@@ -14,16 +14,17 @@ source "$(dirname "${BASH_SOURCE[0]}")/ai_eval.sh"
 setup_python_env() {
 	info "Setting up Python environment..."
 	if ! command -v python3 &>/dev/null; then
-		pkg_install python3 python3-pip python3-venv
+		pkg_install python3
 	fi
+	pkg_install python3-pip python3-venv
 	if ! command -v uv &>/dev/null; then
 		info "Installing uv (fast Python package manager)..."
 		curl -LsSf https://astral.sh/uv/install.sh | sh || {
 			warn "uv install via script failed, falling back to pip"
 		}
-		export PATH="$HOME/.cargo/bin:$PATH"
+		export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 		if ! command -v uv &>/dev/null; then
-			pip3 install uv || warn "uv pip install failed, will use pip3"
+			pip3 install uv || warn "uv pip install failed"
 		fi
 	fi
 	register_result "Python Env" "OK" "Python 3 and uv ready"
