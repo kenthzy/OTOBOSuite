@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 
-OTOBOTAR_URL="${OTOBOTAR_URL:-https://otobo.io/downloads}"
-OTOBOTAR_LATEST="${OTOBOTAR_LATEST:-otobo-latest-11.0.tar.gz}"
+OTOBOTAR_URL="${OTOBOTAR_URL:-https://github.com/RotherOSS/otobo/archive/refs/tags}"
+
+deb_resolve_latest_tag() {
+	curl -s https://api.github.com/repos/RotherOSS/otobo/releases/latest 2>/dev/null |
+		grep '"tag_name"' | head -1 | sed 's/.*"tag_name": "\(.*\)",/\1/' || echo "rel-11_0_16"
+}
 
 deb_control_file() {
 	local version="$1"
@@ -88,34 +92,46 @@ PRERM
 
 deb_extract_version() {
 	local tarball="$1"
-	local version
+	local entry
+	local raw
 
-	version=$(tar tzf "$tarball" 2>/dev/null | head -1 | sed 's|^otobo-\([^/]*\)/.*|\1|')
-	echo "${version:-unknown}"
+	entry=$(tar tzf "$tarball" 2>/dev/null | head -1) || {
+		echo "unknown"
+		return
+	}
+	raw="${entry#otobo-}"
+	raw="${raw%/}"
+	if [[ "$raw" == rel-* ]]; then
+		raw="${raw#rel-}"
+		raw="${raw//_/.}"
+	fi
+	echo "${raw:-unknown}"
 }
 
 deb_download_tarball() {
 	local version="$1"
 	local dest_dir="$2"
-	local tarball_name
+	local tag
+	local filename
 	local url
 
 	if [ "$version" = "latest" ]; then
-		tarball_name="$OTOBOTAR_LATEST"
+		tag=$(deb_resolve_latest_tag)
 	else
-		tarball_name="otobo-${version}.tar.gz"
+		tag="rel-${version//./_}"
 	fi
 
-	url="${OTOBOTAR_URL}/${tarball_name}"
+	filename="${tag}.tar.gz"
+	url="${OTOBOTAR_URL}/${filename}"
 	dest_dir="${dest_dir%/}"
 
-	if [ -f "${dest_dir}/${tarball_name}" ]; then
-		echo "${dest_dir}/${tarball_name}"
+	if [ -f "${dest_dir}/${filename}" ]; then
+		echo "${dest_dir}/${filename}"
 		return 0
 	fi
 
-	wget -q "$url" -O "${dest_dir}/${tarball_name}" || return 1
-	echo "${dest_dir}/${tarball_name}"
+	wget -q "$url" -O "${dest_dir}/${filename}" || return 1
+	echo "${dest_dir}/${filename}"
 }
 
 deb_build_package() {

@@ -91,11 +91,15 @@ build_download_url() {
 	if [ -n "$DOWNLOAD_URL" ]; then
 		return
 	fi
+	local tag
 	if [ "$UPGRADE_VERSION" = "latest" ]; then
-		DOWNLOAD_URL="https://otobo.io/downloads/otobo-latest-11.0.tar.gz"
+		tag=$(curl -s https://api.github.com/repos/RotherOSS/otobo/releases/latest 2>/dev/null |
+			grep '"tag_name"' | head -1 | sed 's/.*"tag_name": "\(.*\)",/\1/')
+		[ -z "$tag" ] && tag="rel-11_0_16"
 	else
-		DOWNLOAD_URL="https://otobo.io/downloads/otobo-${UPGRADE_VERSION}.tar.gz"
+		tag="rel-${UPGRADE_VERSION//./_}"
 	fi
+	DOWNLOAD_URL="https://github.com/RotherOSS/otobo/archive/refs/tags/${tag}.tar.gz"
 }
 
 # -------------------------------------------------
