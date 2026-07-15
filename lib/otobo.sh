@@ -8,6 +8,7 @@ install_otobo() {
 	info "Downloading OTOBO 11..."
 	local otobo_version="${OTOBO_VERSION:-11.0.16}"
 	local tag="rel-${otobo_version//./_}"
+	local tarball="${tag}.tar.gz"
 	local otobo_base_url="${OTOBO_DOWNLOAD_URL:-https://github.com/RotherOSS/otobo/archive/refs/tags}"
 	local url="${otobo_base_url}/${tag}.tar.gz"
 
