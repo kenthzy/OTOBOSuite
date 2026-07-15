@@ -69,11 +69,11 @@ apt_repo_sign() {
 		local release_file="${dist_dir}Release"
 		if [ -f "$release_file" ]; then
 			if [ -n "$gpg_key" ]; then
-				cat "$release_file" | gpg --default-key "$gpg_key" -abs -o "${dist_dir}Release.gpg" 2>/dev/null || true
-				cat "$release_file" | gpg --default-key "$gpg_key" -abs --clearsign -o "${dist_dir}InRelease" 2>/dev/null || true
+				gpg --default-key "$gpg_key" -abs -o "${dist_dir}Release.gpg" <"$release_file" 2>/dev/null || true
+				gpg --default-key "$gpg_key" -abs --clearsign -o "${dist_dir}InRelease" <"$release_file" 2>/dev/null || true
 			else
-				cat "$release_file" | gpg -abs -o "${dist_dir}Release.gpg" 2>/dev/null || true
-				cat "$release_file" | gpg -abs --clearsign -o "${dist_dir}InRelease" 2>/dev/null || true
+				gpg -abs -o "${dist_dir}Release.gpg" <"$release_file" 2>/dev/null || true
+				gpg -abs --clearsign -o "${dist_dir}InRelease" <"$release_file" 2>/dev/null || true
 			fi
 		fi
 	done
