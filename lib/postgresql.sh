@@ -48,6 +48,15 @@ EOF
 	register_result "PostgreSQL DSN" "OK" "DSN configured for $db_name on $db_host:$db_port"
 }
 
+undo_postgresql_db() {
+	local db_name="$1"
+	local db_user="$2"
+	info "Rolling back PostgreSQL database $db_name and user $db_user..."
+	sudo -u postgres psql -c "DROP DATABASE IF EXISTS ${db_name};" 2>/dev/null || true
+	sudo -u postgres psql -c "DROP USER IF EXISTS ${db_user};" 2>/dev/null || true
+	register_result "UndoPostgreSQL" "OK" "Database $db_name and user $db_user dropped"
+}
+
 optimize_postgresql() {
 	local pg_version
 	pg_version=$(psql --version 2>/dev/null | grep -oP '\d+' | head -1)

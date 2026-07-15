@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for considering contributing to the OTOBO 11 Native Installer.
+Thank you for considering contributing to OTOBOSuite.
 
 ## Code Style
 

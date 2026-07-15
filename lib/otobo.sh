@@ -18,8 +18,7 @@ install_otobo() {
 	mv /tmp/otobo-* "$otobo_root"
 
 	useradd -r -d "$otobo_root" -s /bin/bash "$otobo_user" 2>/dev/null || true
-	chown -R "${otobo_user}:${otobo_group}" "$otobo_root"
-	chmod 755 "$otobo_root"
+	set_otobo_permissions "$otobo_root" "$otobo_user" "$otobo_group"
 
 	register_result "OTOBO Install" "OK" "OTOBO 11 installed at $otobo_root"
 }
@@ -102,4 +101,14 @@ dispatch_web_server_install() {
 	else
 		install_apache
 	fi
+}
+
+undo_otobo_install() {
+	local otobo_root="${1:-/opt/otobo}"
+	info "Rolling back OTOBO installation at $otobo_root..."
+	systemctl stop otobo-starman 2>/dev/null || true
+	rm -rf "$otobo_root"
+	userdel -r otobo 2>/dev/null || true
+	groupdel otobo 2>/dev/null || true
+	register_result "UndoOTOBO" "OK" "Removed $otobo_root and otobo user"
 }

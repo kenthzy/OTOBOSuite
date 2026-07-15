@@ -42,6 +42,15 @@ detect_os() {
 	echo "$OS_ID $OS_VERSION"
 }
 
+APT_PROXY_OPTS=()
+
+pkg_init_proxy() {
+	APT_PROXY_OPTS=()
+	if [[ -n "${APT_PROXY:-}" ]]; then
+		APT_PROXY_OPTS=("-o" "Acquire::http::Proxy=${APT_PROXY}" "-o" "Acquire::https::Proxy=${APT_PROXY}")
+	fi
+}
+
 pkg_update() {
 	if [[ -z "$PKG_MANAGER" ]]; then
 		detect_os
@@ -49,7 +58,8 @@ pkg_update() {
 	if [[ -z "$PKG_MANAGER" ]]; then
 		die "Unsupported OS: $OS_NAME"
 	fi
-	$PKG_UPDATE "$@" || true
+	pkg_init_proxy
+	$PKG_UPDATE "${APT_PROXY_OPTS[@]}" "$@" || true
 }
 
 pkg_install() {
@@ -59,7 +69,8 @@ pkg_install() {
 	if [[ -z "$PKG_MANAGER" ]]; then
 		die "Unsupported OS: $OS_NAME"
 	fi
-	$PKG_INSTALL "$@" || die "Failed to install packages: $*"
+	pkg_init_proxy
+	$PKG_INSTALL "${APT_PROXY_OPTS[@]}" "$@" || die "Failed to install packages: $*"
 }
 
 pkg_remove() {

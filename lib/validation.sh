@@ -13,18 +13,15 @@
 # are kept in sync.
 # -------------------------------------------------
 
+# shellcheck source=lib/registry.sh
+source "$(dirname "${BASH_SOURCE[0]}")/registry.sh"
+
 VALIDATION_NAMES=()
 VALIDATION_STATUSES=()
 VALIDATION_MESSAGES=()
 
 register_result() {
-	local check_name="$1"
-	local status="$2"
-	local message="$3"
-
-	VALIDATION_NAMES+=("$check_name")
-	VALIDATION_STATUSES+=("$status")
-	VALIDATION_MESSAGES+=("$message")
+	_registry_register "VALIDATION" "$@"
 }
 
 # -------------------------------------------------
@@ -182,9 +179,10 @@ check_perl() {
 check_otobo() {
 	info "Checking for existing OTOBO installation..."
 
-	if [[ -d /opt/otobo ]]; then
-		register_result "OTOBO" "WARN" "Existing installation detected at /opt/otobo"
-		warning "Existing OTOBO installation detected at /opt/otobo."
+	local otobo_root="${OTOBO_ROOT:-/opt/otobo}"
+	if [[ -d "$otobo_root" ]]; then
+		register_result "OTOBO" "WARN" "Existing installation detected at ${otobo_root}"
+		warning "Existing OTOBO installation detected at ${otobo_root}."
 	else
 		register_result "OTOBO" "PASS" "No existing installation"
 		success "No existing OTOBO installation detected."

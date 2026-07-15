@@ -105,3 +105,18 @@ run_security_hardening() {
 
 	register_result "Security" "OK" "Security hardening applied"
 }
+
+undo_security() {
+	info "Rolling back security hardening..."
+	if command -v ufw >/dev/null 2>&1; then
+		ufw --force disable 2>/dev/null || true
+		ufw --force reset 2>/dev/null || true
+	fi
+	systemctl stop fail2ban 2>/dev/null || true
+	systemctl disable fail2ban 2>/dev/null || true
+	pkg_remove fail2ban 2>/dev/null || true
+	rm -f /etc/fail2ban/jail.local
+	systemctl stop unattended-upgrades 2>/dev/null || true
+	rm -f /etc/apt/apt.conf.d/50unattended-upgrades /etc/apt/apt.conf.d/20auto-upgrades
+	register_result "UndoSecurity" "OK" "Security hardening reverted"
+}

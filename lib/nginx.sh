@@ -53,3 +53,14 @@ install_nginx() {
 	register_result "Nginx" "PASS" "nginx reverse proxy configured for OTOBO"
 	success "nginx configured as reverse proxy to Starman."
 }
+
+undo_nginx_install() {
+	info "Rolling back nginx + Starman installation..."
+	systemctl stop otobo-starman 2>/dev/null || true
+	systemctl disable otobo-starman 2>/dev/null || true
+	rm -f /etc/systemd/system/otobo-starman.service
+	systemctl stop nginx 2>/dev/null || true
+	rm -f /etc/nginx/sites-available/otobo /etc/nginx/sites-enabled/otobo
+	systemctl daemon-reload
+	register_result "UndoNginx" "OK" "nginx OTOBO site and Starman service removed"
+}

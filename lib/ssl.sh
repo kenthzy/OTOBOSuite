@@ -5,75 +5,31 @@
 # SSL/HTTPS Configuration Module
 #############################################
 
-set -e
+set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SCRIPT_DIR/lib/colors.sh"
 source "$SCRIPT_DIR/lib/functions.sh"
+source "$SCRIPT_DIR/lib/registry.sh"
 
+# shellcheck disable=SC2034
 SSL_NAMES=()
+# shellcheck disable=SC2034
 SSL_STATUSES=()
+# shellcheck disable=SC2034
 SSL_MESSAGES=()
 HAS_FAIL=0
 
 register_result() {
-	local name="$1"
-	local status="$2"
-	local message="$3"
-	SSL_NAMES+=("$name")
-	SSL_STATUSES+=("$status")
-	SSL_MESSAGES+=("$message")
-	if [[ "$status" == "FAIL" ]]; then
+	local st="$2"
+	_registry_register "SSL" "$@"
+	if [[ "$st" == "FAIL" ]]; then
 		HAS_FAIL=1
 	fi
 }
 
 ssl_summary() {
-	local pass_count=0 warn_count=0 fail_count=0 info_count=0 skip_count=0
-
-	for status in "${SSL_STATUSES[@]}"; do
-		case "$status" in
-		PASS) ((pass_count++)) ;;
-		WARN) ((warn_count++)) ;;
-		FAIL) ((fail_count++)) ;;
-		INFO) ((info_count++)) ;;
-		SKIP) ((skip_count++)) ;;
-		esac
-	done
-
-	echo
-	echo -e "${BOLD}============================================================${NC}"
-	echo -e "${BOLD}$(printf '%*s' 30 "")SSL SETUP SUMMARY${NC}"
-	echo -e "${BOLD}============================================================${NC}"
-
-	for i in "${!SSL_NAMES[@]}"; do
-		local name="${SSL_NAMES[$i]}"
-		local status="${SSL_STATUSES[$i]}"
-		local message="${SSL_MESSAGES[$i]}"
-		local formatted_status
-
-		case "$status" in
-		PASS) formatted_status="${GREEN}PASS${NC}" ;;
-		WARN) formatted_status="${YELLOW}WARN${NC}" ;;
-		FAIL) formatted_status="${RED}FAIL${NC}" ;;
-		INFO) formatted_status="${LIGHT_BLUE}INFO${NC}" ;;
-		SKIP) formatted_status="${MAGENTA}SKIP${NC}" ;;
-		esac
-
-		printf " %-18s  %-4b  %s\n" "$name" "$formatted_status" "$message"
-	done
-
-	echo -e "${BOLD}============================================================${NC}"
-	local total=$((pass_count + warn_count + fail_count + info_count + skip_count))
-	local result_line="Result: ${GREEN}${pass_count} PASS${NC}"
-	result_line+=", ${YELLOW}${warn_count} WARN${NC}"
-	result_line+=", ${RED}${fail_count} FAIL${NC}"
-	result_line+=", ${LIGHT_BLUE}${info_count} INFO${NC}"
-	result_line+=", ${MAGENTA}${skip_count} SKIP${NC}"
-	result_line+=" (${total} total)"
-	echo -e " ${result_line}"
-	echo -e "${BOLD}============================================================${NC}"
-	echo
+	_registry_print_summary "SSL" "SSL SETUP SUMMARY"
 }
 
 get_public_ip() {
@@ -479,14 +435,16 @@ detect_network_status() {
 }
 
 show_mode_menu() {
+	local choice
 	echo " What would you like to do?"
 	echo
 	echo "    1) Let's Encrypt (recommended)  -- Trusted certificate, needs a domain"
 	echo "    2) Self-signed certificate      -- No domain needed, browser warning"
 	echo "    3) Cancel"
 	echo
-	read -rp " Enter your choice [1-3]: " mode
+	read -rp " Enter your choice [1-3]: " choice
 	echo
+	echo "$choice"
 }
 
 configure_ssl() {
@@ -508,7 +466,8 @@ main() {
 	detect_network_status
 
 	while true; do
-		show_mode_menu
+		local mode
+		mode=$(show_mode_menu)
 
 		case "$mode" in
 		1)
@@ -549,6 +508,17 @@ main() {
 		warning "SSL setup completed with warnings. Check the report above."
 	fi
 	echo
+}
+
+undo_ssl() {
+	info "Rolling back SSL configuration..."
+	rm -f /etc/ssl/certs/otobo-selfsigned.crt /etc/ssl/private/otobo-selfsigned.key
+	rm -f /etc/apache2/sites-available/zzz_otobo-ssl.conf
+	rm -f /etc/nginx/sites-available/otobo-ssl /etc/nginx/sites-enabled/otobo-ssl
+	if command -v certbot >/dev/null 2>&1; then
+		certbot delete --non-interactive 2>/dev/null || true
+	fi
+	register_result "UndoSSL" "OK" "SSL certs and configs removed"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

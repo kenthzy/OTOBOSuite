@@ -5,24 +5,31 @@
 # Helper Functions
 #############################################
 
+LOGFILE="${LOGFILE:-/var/log/otobo-suite-$(date +%Y%m%d-%H%M%S).log}"
+touch "$LOGFILE" 2>/dev/null || true
+
 line() {
 	printf '%*s\n' "${COLUMNS:-60}" '' | tr ' ' '='
 }
 
 info() {
 	echo -e "${LIGHT_BLUE}[INFO]${NC} $1"
+	echo "[INFO] $1" >>"$LOGFILE"
 }
 
 success() {
 	echo -e "${GREEN}[ OK ]${NC} $1"
+	echo "[ OK ] $1" >>"$LOGFILE"
 }
 
 warning() {
 	echo -e "${YELLOW}[WARN]${NC} $1"
+	echo "[WARN] $1" >>"$LOGFILE"
 }
 
 error() {
 	echo -e "${RED}[FAIL]${NC} $1"
+	echo "[FAIL] $1" >>"$LOGFILE"
 	exit 1
 }
 

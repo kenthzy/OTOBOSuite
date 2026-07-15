@@ -7,19 +7,21 @@
 #      sudo ./repair.sh --check
 #############################################
 
-set -e
+set -euo pipefail
 
 source lib/colors.sh
 source lib/banner.sh
 source lib/functions.sh
-source lib/validation.sh
+source lib/registry.sh
+source lib/permissions.sh
 
 # -------------------------------------------------
 # Constants
 # -------------------------------------------------
 
+OTOBO_ROOT="${OTOBO_ROOT:-/opt/otobo}"
 CREDS_FILE="/root/.otobo_db_credentials"
-CONFIG_FILE="/opt/otobo/Kernel/Config.pm"
+CONFIG_FILE="${OTOBO_ROOT}/Kernel/Config.pm"
 APACHE_SITE="zzz_otobo"
 REQUIRED_APACHE_MODS="perl deflate headers rewrite proxy proxy_http ssl"
 
@@ -34,24 +36,16 @@ REPAIR_REPAIR_STATUSES=()
 REPAIR_REPAIR_MESSAGES=()
 
 register_diagnosis() {
-	local name="$1"
-	local status="$2"
-	local message="$3"
-
-	REPAIR_NAMES+=("$name")
-	REPAIR_DIAG_STATUSES+=("$status")
-	REPAIR_DIAG_MESSAGES+=("$message")
+	REPAIR_NAMES+=("$1")
+	REPAIR_DIAG_STATUSES+=("$2")
+	REPAIR_DIAG_MESSAGES+=("$3")
 	REPAIR_REPAIR_STATUSES+=("")
 	REPAIR_REPAIR_MESSAGES+=("")
 }
 
 register_repair() {
-	local index="$1"
-	local status="$2"
-	local message="$3"
-
-	REPAIR_REPAIR_STATUSES[index]="$status"
-	REPAIR_REPAIR_MESSAGES[index]="$message"
+	REPAIR_REPAIR_STATUSES[$1]="$2"
+	REPAIR_REPAIR_MESSAGES[$1]="$3"
 }
 
 # -------------------------------------------------
@@ -226,7 +220,7 @@ diagnose_postgresql() {
 }
 
 diagnose_perl() {
-	local check_modules_script="/opt/otobo/bin/otobo.CheckModules.pl"
+	local check_modules_script="${OTOBO_ROOT}/bin/otobo.CheckModules.pl"
 
 	info "Checking Perl modules..."
 
@@ -254,21 +248,21 @@ diagnose_perl() {
 diagnose_permissions() {
 	info "Checking file permissions..."
 
-	if [[ ! -d /opt/otobo ]]; then
+	if [[ ! -d "$OTOBO_ROOT" ]]; then
 		register_diagnosis "Permissions" "INFO" "OTBO not installed — skipping permissions check"
 		info "OTBO not installed. Skipping permissions check."
 		return
 	fi
 
 	local owner
-	owner=$(stat -c '%U:%G' /opt/otobo 2>/dev/null || stat -f '%Su:%Sg' /opt/otobo 2>/dev/null)
+	owner=$(stat -c '%U:%G' "$OTOBO_ROOT" 2>/dev/null || stat -f '%Su:%Sg' "$OTOBO_ROOT" 2>/dev/null)
 
-	if [[ "$owner" != "otobo:www-data" ]]; then
-		register_diagnosis "Permissions" "WARN" "Ownership is ${owner} (expected otobo:www-data)"
-		warning "Ownership is ${owner}, expected otobo:www-data."
-	else
+	if [[ "$owner" == "otobo:www-data" ]]; then
 		register_diagnosis "Permissions" "PASS" "Ownership is otobo:www-data"
 		success "File permissions are correct."
+	else
+		register_diagnosis "Permissions" "WARN" "Ownership is ${owner:-unknown} (expected otobo:www-data)"
+		warning "Ownership is ${owner:-unknown}, expected otobo:www-data."
 	fi
 }
 
@@ -436,7 +430,36 @@ repair_nginx() {
 	fi
 
 	if [[ ! -f /etc/nginx/sites-available/otobo ]]; then
-		cp /opt/otobo/scripts/apache2-httpd.include.conf /etc/nginx/sites-available/otobo 2>/dev/null || true
+		cat >/etc/nginx/sites-available/otobo <<-'NGINX_CONF'
+			upstream otobo_backend {
+			    server 127.0.0.1:5000;
+			}
+
+			server {
+			    listen 80;
+			    server_name _;
+
+			    client_max_body_size 64M;
+			    proxy_read_timeout 120s;
+			    proxy_send_timeout 120s;
+
+			    location /otobo-web/ {
+			        proxy_pass http://otobo_backend/otobo-web/;
+			        proxy_set_header Host $host;
+			        proxy_set_header X-Real-IP $remote_addr;
+			        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+			        proxy_set_header X-Forwarded-Proto $scheme;
+			    }
+
+			    location / {
+			        proxy_pass http://otobo_backend;
+			        proxy_set_header Host $host;
+			        proxy_set_header X-Real-IP $remote_addr;
+			        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+			        proxy_set_header X-Forwarded-Proto $scheme;
+			    }
+			}
+		NGINX_CONF
 	fi
 
 	if [[ -L /etc/nginx/sites-enabled/default ]]; then
@@ -530,7 +553,7 @@ repair_perl_modules() {
 	info "Repairing Perl modules..."
 
 	source lib/perl.sh
-	install_perl
+	install_perl_deps "$(detect_db_engine)"
 
 	register_repair "$idx" "FIXED" "Perl modules reinstalled"
 	success "Perl modules repaired."
@@ -540,27 +563,43 @@ repair_permissions() {
 	local idx="$1"
 	info "Repairing file permissions..."
 
-	if [[ ! -d /opt/otobo ]]; then
+	if [[ ! -d "$OTOBO_ROOT" ]]; then
 		register_repair "$idx" "SKIP" "OTBO not installed"
 		info "OTBO not installed. Skipping permissions repair."
 		return
 	fi
 
-	chown -R otobo:www-data /opt/otobo
-	find /opt/otobo -type d -exec chmod 755 {} \;
-	find /opt/otobo -type f -exec chmod 644 {} \;
-	chmod 755 /opt/otobo/bin/* >/dev/null 2>&1 || true
-
+	set_otobo_permissions "$OTOBO_ROOT" "otobo" "www-data"
 	register_repair "$idx" "FIXED" "Ownership and permissions corrected"
-	success "File permissions repaired."
 }
 
 repair_config() {
 	local idx="$1"
 	info "Repairing Kernel/Config.pm..."
 
-	source lib/otobo.sh
-	write_config
+	info "Regenerating Kernel/Config.pm from stored credentials..."
+	if [ -f /root/.otobo_db_credentials ]; then
+		# shellcheck source=/dev/null
+		source /root/.otobo_db_credentials
+		cat >"${OTOBO_ROOT}/Kernel/Config.pm" <<-CONF
+			package Kernel::Config;
+			use strict;
+			use warnings;
+			utf8;
+			our \$Home = '${OTOBO_ROOT}';
+			our \$DatabaseHost = '${DB_HOST:-127.0.0.1}';
+			our \$Database = '${DB_NAME:-otobo}';
+			our \$DatabaseUser = '${DB_USER:-otobo}';
+			our \$DatabasePassword = '${DB_PASS:-}';
+			our \$DatabasePort = '${DB_PORT:-3306}';
+			1;
+		CONF
+		set_otobo_permissions "$OTOBO_ROOT" otobo www-data
+		chmod 640 "${OTOBO_ROOT}/Kernel/Config.pm"
+	else
+		warn "No stored credentials found at /root/.otobo_db_credentials"
+		warn "Run install.sh or manually create Kernel/Config.pm"
+	fi
 
 	register_repair "$idx" "FIXED" "Kernel/Config.pm rewritten from credentials"
 	success "Config.pm repaired."
@@ -636,9 +675,9 @@ repair_forbidden() {
 	local idx="$1"
 	info "Repairing 403 Forbidden issues..."
 
-	if [[ -d /opt/otobo ]]; then
-		chmod 755 /opt/otobo/var/httpd/htdocs >/dev/null 2>&1 || true
-		chown -R otobo:www-data /opt/otobo/var/httpd/htdocs >/dev/null 2>&1 || true
+	if [[ -d "$OTOBO_ROOT" ]]; then
+		chmod 755 "${OTOBO_ROOT}/var/httpd/htdocs" >/dev/null 2>&1 || true
+		set_otobo_permissions "$OTOBO_ROOT" otobo www-data
 	fi
 
 	if ! a2query -s "$APACHE_SITE" 2>/dev/null | grep -q "enabled"; then
@@ -649,6 +688,58 @@ repair_forbidden() {
 
 	register_repair "$idx" "FIXED" "Permissions corrected and Apache restarted"
 	success "403 Forbidden repair completed."
+}
+
+diagnose_ai() {
+	info "Checking Open Ticket AI..."
+
+	if ! systemctl is-enabled open-ticket-ai.service 2>/dev/null | grep -q enabled; then
+		register_diagnosis "AI" "INFO" "Open Ticket AI not installed"
+		info "Open Ticket AI not installed. Skipping."
+		return
+	fi
+
+	local issues=""
+
+	if ! systemctl is-active --quiet open-ticket-ai.service 2>/dev/null; then
+		issues="${issues}Service not running; "
+	fi
+
+	if [ ! -f /etc/open-ticket-ai/config.yml ]; then
+		issues="${issues}Config missing; "
+	fi
+
+	if [ -f /etc/open-ticket-ai/config.yml ]; then
+		local model_path
+		model_path=$(grep 'model:' /etc/open-ticket-ai/config.yml 2>/dev/null | awk '{print $2}' | tr -d '"')
+		if [ -n "$model_path" ] && [ ! -d "$model_path" ] && [[ "$model_path" != *"/"* ]]; then
+			:
+		elif [ -n "$model_path" ] && [ ! -d "$model_path" ]; then
+			issues="${issues}Model path missing; "
+		fi
+	fi
+
+	if [[ -n "$issues" ]]; then
+		register_diagnosis "AI" "WARN" "${issues%%; }"
+		warning "AI issues found: ${issues%%; }"
+	else
+		register_diagnosis "AI" "PASS" "Service running, config and model present"
+		success "Open Ticket AI is healthy."
+	fi
+}
+
+repair_ai() {
+	local idx="$1"
+	info "Repairing Open Ticket AI..."
+
+	if systemctl is-enabled open-ticket-ai.service 2>/dev/null | grep -q enabled; then
+		systemctl restart open-ticket-ai.service || true
+		register_repair "$idx" "FIXED" "AI service restarted"
+		success "Open Ticket AI repaired."
+	else
+		register_repair "$idx" "SKIP" "Open Ticket AI not installed"
+		info "Open Ticket AI not installed. Skipping repair."
+	fi
 }
 
 # -------------------------------------------------
@@ -668,6 +759,7 @@ run_diagnostics() {
 	diagnose_db_connection
 	diagnose_firewall
 	diagnose_forbidden
+	diagnose_ai
 
 	line
 }
@@ -691,6 +783,7 @@ repair_all() {
 			DBConnection) repair_db_connection "$i" ;;
 			Firewall) repair_firewall "$i" ;;
 			Forbidden) repair_forbidden "$i" ;;
+			AI) repair_ai "$i" ;;
 			*)
 				register_repair "$i" "SKIP" "No repair handler for ${name}"
 				warning "No repair handler for ${name}."
@@ -786,7 +879,7 @@ show_repair_summary() {
 main() {
 	show_banner
 
-	if [[ "$1" == "--check" ]]; then
+	if [[ "${1:-}" == "--check" ]]; then
 		run_diagnostics
 		show_repair_summary
 		exit 0

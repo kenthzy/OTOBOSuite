@@ -5,76 +5,32 @@
 # Automated Backup Module
 #############################################
 
-set -e
+set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SCRIPT_DIR/lib/colors.sh"
 source "$SCRIPT_DIR/lib/functions.sh"
+source "$SCRIPT_DIR/lib/registry.sh"
 
 CREDS_FILE="/root/.otobo_db_credentials"
+# shellcheck disable=SC2034
 BACKUP_NAMES=()
+# shellcheck disable=SC2034
 BACKUP_STATUSES=()
+# shellcheck disable=SC2034
 BACKUP_MESSAGES=()
 HAS_FAIL=0
 
 register_result() {
-	local name="$1"
-	local status="$2"
-	local message="$3"
-	BACKUP_NAMES+=("$name")
-	BACKUP_STATUSES+=("$status")
-	BACKUP_MESSAGES+=("$message")
-	if [[ "$status" == "FAIL" ]]; then
+	local st="$2"
+	_registry_register "BACKUP" "$@"
+	if [[ "$st" == "FAIL" ]]; then
 		HAS_FAIL=1
 	fi
 }
 
 backup_summary() {
-	local pass_count=0 warn_count=0 fail_count=0 info_count=0 skip_count=0
-
-	for status in "${BACKUP_STATUSES[@]}"; do
-		case "$status" in
-		PASS) ((pass_count++)) ;;
-		WARN) ((warn_count++)) ;;
-		FAIL) ((fail_count++)) ;;
-		INFO) ((info_count++)) ;;
-		SKIP) ((skip_count++)) ;;
-		esac
-	done
-
-	echo
-	echo -e "${BOLD}============================================================${NC}"
-	echo -e "${BOLD}$(printf '%*s' 28 "")BACKUP SUMMARY${NC}"
-	echo -e "${BOLD}============================================================${NC}"
-
-	for i in "${!BACKUP_NAMES[@]}"; do
-		local name="${BACKUP_NAMES[$i]}"
-		local status="${BACKUP_STATUSES[$i]}"
-		local message="${BACKUP_MESSAGES[$i]}"
-		local formatted_status
-
-		case "$status" in
-		PASS) formatted_status="${GREEN}PASS${NC}" ;;
-		WARN) formatted_status="${YELLOW}WARN${NC}" ;;
-		FAIL) formatted_status="${RED}FAIL${NC}" ;;
-		INFO) formatted_status="${LIGHT_BLUE}INFO${NC}" ;;
-		SKIP) formatted_status="${MAGENTA}SKIP${NC}" ;;
-		esac
-
-		printf " %-18s  %-4b  %s\n" "$name" "$formatted_status" "$message"
-	done
-
-	echo -e "${BOLD}============================================================${NC}"
-	local total=$((pass_count + warn_count + fail_count + info_count + skip_count))
-	local result_line="Result: ${GREEN}${pass_count} PASS${NC}"
-	result_line+=", ${YELLOW}${warn_count} WARN${NC}"
-	result_line+=", ${RED}${fail_count} FAIL${NC}"
-	result_line+=", ${LIGHT_BLUE}${info_count} INFO${NC}"
-	result_line+=", ${MAGENTA}${skip_count} SKIP${NC}"
-	result_line+=" (${total} total)"
-	echo -e " ${result_line}"
-	echo -e "${BOLD}============================================================${NC}"
-	echo
+	_registry_print_summary "BACKUP" "BACKUP SUMMARY"
 }
 
 check_root() {
@@ -94,12 +50,9 @@ load_db_credentials() {
 }
 
 discover_otobo_dir() {
-	if [[ -d "/opt/otobo" ]]; then
+	OTOBO_DIR="${OTOBO_ROOT:-}"
+	if [[ -z "$OTOBO_DIR" ]] && [[ -d "/opt/otobo" ]]; then
 		OTOBO_DIR="/opt/otobo"
-	elif [[ -d "/opt/otobo" ]]; then
-		OTOBO_DIR="/opt/otobo"
-	else
-		OTOBO_DIR=""
 	fi
 }
 
@@ -233,6 +186,9 @@ backup_full() {
 	total_size=$(du -sh "$BACKUP_DEST" | cut -f1)
 	register_result "Total" "PASS" "Backup saved to $BACKUP_DEST (${total_size})"
 	success "Full backup complete: $BACKUP_DEST"
+
+	upload_to_s3 "$BACKUP_DEST" "otobo/full/$(basename "$BACKUP_DEST")"
+	upload_to_rsync "$BACKUP_DEST"
 }
 
 backup_config_only() {
@@ -260,6 +216,184 @@ backup_articles_only() {
 	backup_articles
 	register_result "Total" "PASS" "Articles saved to $BACKUP_DEST"
 	success "Articles backup complete: $BACKUP_DEST"
+}
+
+do_full_backup() { backup_full; }
+do_partial_backup() {
+	backup_config_only
+	backup_db_only
+}
+list_backups() {
+	if [ -d "${BACKUP_DEST:-/var/backups/otobo}" ]; then
+		# shellcheck disable=SC2012
+		ls -la "${BACKUP_DEST}" 2>/dev/null | head -30
+	else
+		warn "No backup directory found"
+	fi
+}
+restore_backup() {
+	local restore_path="${1:-}"
+	if [[ -z "$restore_path" ]]; then
+		# If called interactively, list available backups
+		local base="/var/backups/otobo"
+		if [[ -d "$base" ]]; then
+			info "Available backups:"
+			find "$base" -maxdepth 2 -type d -name "20*" 2>/dev/null | sort -r | head -20
+		fi
+		echo ""
+		read -rp "Enter backup path to restore: " restore_path
+	fi
+
+	if [[ ! -d "$restore_path" ]]; then
+		register_result "Restore" "FAIL" "Backup directory not found: $restore_path"
+		error "Backup directory not found: $restore_path"
+	fi
+
+	info "Restoring from: $restore_path"
+
+	discover_otobo_dir
+	load_db_credentials
+
+	# Stop services
+	info "Stopping OTOBO services..."
+	systemctl stop otobo-starman 2>/dev/null || true
+	systemctl stop apache2 2>/dev/null || true
+	systemctl stop nginx 2>/dev/null || true
+
+	# Restore database
+	local db_sql=""
+	db_sql=$(find "$restore_path" -maxdepth 1 -name "otobo-db.sql" 2>/dev/null | head -1)
+	if [[ -n "$db_sql" ]]; then
+		info "Restoring database from $db_sql..."
+		local engine="${DB_ENGINE:-mariadb}"
+		local db_ok=1
+		if [[ "$engine" == "postgresql" ]]; then
+			su - postgres -c "dropdb ${OTOBO_DB_NAME:-otobo}" 2>/dev/null || true
+			su - postgres -c "createdb ${OTOBO_DB_NAME:-otobo} -O ${OTOBO_DB_USER:-otobo}" 2>/dev/null || true
+			PGPASSWORD="${OTOBO_DB_PASSWORD:-}" psql -U "${OTOBO_DB_USER:-otobo}" -h localhost "${OTOBO_DB_NAME:-otobo}" <"$db_sql" 2>/dev/null && db_ok=0
+		else
+			mysql -e "DROP DATABASE IF EXISTS ${OTOBO_DB_NAME:-otobo}" 2>/dev/null || true
+			mysql -e "CREATE DATABASE ${OTOBO_DB_NAME:-otobo}" 2>/dev/null || true
+			if [[ -n "${OTOBO_DB_PASSWORD:-}" ]]; then
+				mysql -u "${OTOBO_DB_USER:-otobo}" -p"${OTOBO_DB_PASSWORD:-}" "${OTOBO_DB_NAME:-otobo}" <"$db_sql" 2>/dev/null && db_ok=0
+			else
+				mysql "${OTOBO_DB_NAME:-otobo}" <"$db_sql" 2>/dev/null && db_ok=0
+			fi
+		fi
+		if [[ "$db_ok" -eq 0 ]]; then
+			register_result "RestoreDB" "PASS" "Database restored from $db_sql"
+			success "Database restored."
+		else
+			register_result "RestoreDB" "FAIL" "Database restore failed"
+			warning "Database restore failed."
+		fi
+	else
+		register_result "RestoreDB" "SKIP" "No database SQL dump found in backup"
+		info "No database dump found in backup."
+	fi
+
+	# Restore files
+	if [[ -n "$OTOBO_DIR" ]]; then
+		local app_backup
+		app_backup=$(find "$restore_path" -maxdepth 1 -type f -name "*.tar.gz" 2>/dev/null | head -1)
+		if [[ -n "$app_backup" ]]; then
+			info "Restoring application files from $app_backup..."
+			mkdir -p /tmp/restore-otobo
+			tar xzf "$app_backup" -C /tmp/restore-otobo 2>/dev/null && cp -a /tmp/restore-otobo/* "$OTOBO_DIR"/ 2>/dev/null
+			local bak_rc=$?
+			if [[ $bak_rc -eq 0 ]]; then
+				register_result "RestoreFiles" "PASS" "Application files restored"
+				success "Application files restored."
+			else
+				register_result "RestoreFiles" "WARN" "File restore may be incomplete"
+				warning "File restore may be incomplete (exit code $bak_rc)."
+			fi
+			rm -rf /tmp/restore-otobo
+		else
+			# Also check for Config.pm / Files/ directory restore from individual items
+			backup_configs
+			register_result "RestoreFiles" "INFO" "Individual config files restored"
+			info "Individual config files restored."
+		fi
+	else
+		register_result "RestoreFiles" "SKIP" "OTOBO directory not found — cannot restore files"
+		info "OTOBO directory not found. Cannot restore files."
+	fi
+
+	# Restart services
+	info "Restarting services..."
+	systemctl start mariadb 2>/dev/null || systemctl start postgresql 2>/dev/null || true
+	systemctl start otobo-starman 2>/dev/null || true
+	systemctl start apache2 2>/dev/null || systemctl start nginx 2>/dev/null || true
+
+	register_result "Restore" "PASS" "Restore completed from $restore_path"
+	success "Restore complete: $restore_path"
+}
+schedule_cron_backup() {
+	local schedule="${1:-0 2 * * *}"
+	local script_path="${2:-${OTOBO_ROOT:-/opt/otobo}/backup.sh}"
+	local cron_file="/etc/cron.d/otobo-backup"
+	local log_file="/var/log/otobo-backup.log"
+	cat >"$cron_file" <<-EOF
+		SHELL=/bin/bash
+		PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+		$schedule root $script_path --cron >> $log_file 2>&1
+	EOF
+	chmod 644 "$cron_file"
+	register_result "CronInstall" "PASS" "Cron job installed: $cron_file"
+	success "Backup cron scheduled: $schedule"
+}
+
+upload_to_s3() {
+	local src="$1"
+	local bucket="${BACKUP_S3_BUCKET:-}"
+	if [[ -z "$bucket" ]]; then
+		return
+	fi
+	local dest="${2:-otobo/$(basename "$src")}"
+
+	local s3_ok=1
+	if command -v aws >/dev/null 2>&1; then
+		info "Uploading to S3: s3://${bucket}/${dest}..."
+		aws s3 cp "$src" "s3://${bucket}/${dest}" 2>/dev/null && s3_ok=0
+	elif command -v s3cmd >/dev/null 2>&1; then
+		info "Uploading to S3 via s3cmd: s3://${bucket}/${dest}..."
+		s3cmd put "$src" "s3://${bucket}/${dest}" 2>/dev/null && s3_ok=0
+	else
+		register_result "S3Upload" "SKIP" "aws/s3cmd not installed — install awscli or s3cmd for S3 backup"
+		info "aws/s3cmd not installed. Skipping S3 upload."
+		return
+	fi
+
+	if [[ "$s3_ok" -eq 0 ]]; then
+		register_result "S3Upload" "PASS" "Uploaded to s3://${bucket}/${dest}"
+		success "S3 upload complete."
+	else
+		register_result "S3Upload" "FAIL" "S3 upload failed for s3://${bucket}/${dest}"
+		warning "S3 upload failed."
+	fi
+}
+
+upload_to_rsync() {
+	local src="$1"
+	local target="${BACKUP_RSYNC_TARGET:-}"
+	if [[ -z "$target" ]]; then
+		return
+	fi
+
+	if ! command -v rsync >/dev/null 2>&1; then
+		register_result "RsyncUpload" "SKIP" "rsync not installed"
+		return
+	fi
+
+	info "Rsyncing to $target..."
+	if rsync -avz --progress "$src" "$target" 2>/dev/null; then
+		register_result "RsyncUpload" "PASS" "Synced to $target"
+		success "Remote rsync complete."
+	else
+		register_result "RsyncUpload" "FAIL" "rsync to $target failed"
+		warning "Remote rsync failed."
+	fi
 }
 
 prune_backups() {
@@ -339,8 +473,10 @@ show_backup_menu() {
 	echo "    5) Schedule cron      -- Install daily automatic backup"
 	echo "    6) Cancel"
 	echo
+	local bm_choice
 	read -rp " Enter your choice [1-6]: " bm_choice
 	echo
+	echo "$bm_choice"
 }
 
 show_banner() {
@@ -357,12 +493,12 @@ show_banner() {
 main() {
 	check_root
 
-	if [[ "$1" == "--cron" ]]; then
+	if [[ "${1:-}" == "--cron" ]]; then
 		cron_run
 		exit 0
 	fi
 
-	if [[ "$1" == "--cron-install" ]]; then
+	if [[ "${1:-}" == "--cron-install" ]]; then
 		install_cron
 		echo
 		backup_summary
@@ -371,7 +507,8 @@ main() {
 
 	while true; do
 		show_banner
-		show_backup_menu
+		local bm_choice
+		bm_choice=$(show_backup_menu)
 
 		case "$bm_choice" in
 		1)

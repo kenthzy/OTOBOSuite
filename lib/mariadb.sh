@@ -49,3 +49,15 @@ EOF
 	chmod 640 /opt/otobo/Kernel/Config.pm
 	register_result "MariaDB DSN" "OK" "DSN configured for $db_name on $db_host:$db_port"
 }
+
+undo_mariadb_db() {
+	local db_name="$1"
+	local db_user="$2"
+	info "Rolling back MariaDB database $db_name and user $db_user..."
+	mysql -u root <<SQL
+DROP DATABASE IF EXISTS \`${db_name}\`;
+DROP USER IF EXISTS '${db_user}'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+	register_result "UndoMariaDB" "OK" "Database $db_name and user $db_user dropped"
+}

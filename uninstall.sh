@@ -5,75 +5,31 @@
 # Uninstall Module
 #############################################
 
-set -e
+set -euo pipefail
 
 source "$(dirname "$0")/lib/colors.sh"
 source "$(dirname "$0")/lib/functions.sh"
+source "$(dirname "$0")/lib/registry.sh"
 
+# shellcheck disable=SC2034
 UNINSTALL_NAMES=()
+# shellcheck disable=SC2034
 UNINSTALL_STATUSES=()
+# shellcheck disable=SC2034
 UNINSTALL_MESSAGES=()
 HAS_FAIL=0
 FULL_MODE=0
 
 register_result() {
-	local name="$1"
-	local status="$2"
-	local message="$3"
-	UNINSTALL_NAMES+=("$name")
-	UNINSTALL_STATUSES+=("$status")
-	UNINSTALL_MESSAGES+=("$message")
-	if [[ "$status" == "FAIL" ]]; then
+	local st="$2"
+	_registry_register "UNINSTALL" "$@"
+	if [[ "$st" == "FAIL" ]]; then
 		HAS_FAIL=1
 	fi
 }
 
 uninstall_summary() {
-	local pass_count=0 warn_count=0 fail_count=0 info_count=0 skip_count=0
-
-	for status in "${UNINSTALL_STATUSES[@]}"; do
-		case "$status" in
-		PASS) ((pass_count++)) ;;
-		WARN) ((warn_count++)) ;;
-		FAIL) ((fail_count++)) ;;
-		INFO) ((info_count++)) ;;
-		SKIP) ((skip_count++)) ;;
-		esac
-	done
-
-	echo
-	echo -e "${BOLD}============================================================${NC}"
-	echo -e "${BOLD}$(printf '%*s' 30 "")UNINSTALL SUMMARY${NC}"
-	echo -e "${BOLD}============================================================${NC}"
-
-	for i in "${!UNINSTALL_NAMES[@]}"; do
-		local name="${UNINSTALL_NAMES[$i]}"
-		local status="${UNINSTALL_STATUSES[$i]}"
-		local message="${UNINSTALL_MESSAGES[$i]}"
-		local formatted_status
-
-		case "$status" in
-		PASS) formatted_status="${GREEN}PASS${NC}" ;;
-		WARN) formatted_status="${YELLOW}WARN${NC}" ;;
-		FAIL) formatted_status="${RED}FAIL${NC}" ;;
-		INFO) formatted_status="${LIGHT_BLUE}INFO${NC}" ;;
-		SKIP) formatted_status="${MAGENTA}SKIP${NC}" ;;
-		esac
-
-		printf " %-16s  %-4b  %s\n" "$name" "$formatted_status" "$message"
-	done
-
-	echo -e "${BOLD}============================================================${NC}"
-	local total=$((pass_count + warn_count + fail_count + info_count + skip_count))
-	local result_line="Result: ${GREEN}${pass_count} PASS${NC}"
-	result_line+=", ${YELLOW}${warn_count} WARN${NC}"
-	result_line+=", ${RED}${fail_count} FAIL${NC}"
-	result_line+=", ${LIGHT_BLUE}${info_count} INFO${NC}"
-	result_line+=", ${MAGENTA}${skip_count} SKIP${NC}"
-	result_line+=" (${total} total)"
-	echo -e " ${result_line}"
-	echo -e "${BOLD}============================================================${NC}"
-	echo
+	_registry_print_summary "UNINSTALL" "UNINSTALL SUMMARY"
 }
 
 uninstall_step() {
@@ -93,12 +49,13 @@ uninstall_step() {
 }
 
 remove_otobo_files() {
-	if [[ -d /opt/otobo ]]; then
-		rm -rf /opt/otobo
-		register_result "OTOBOfiles" "PASS" "/opt/otobo removed"
+	local otobo_root="${OTOBO_ROOT:-/opt/otobo}"
+	if [[ -d "$otobo_root" ]]; then
+		rm -rf "$otobo_root"
+		register_result "OTOBOfiles" "PASS" "${otobo_root} removed"
 		success "OTOBO files removed."
 	else
-		register_result "OTOBOfiles" "INFO" "/opt/otobo not found"
+		register_result "OTOBOfiles" "INFO" "${otobo_root} not found"
 		info "OTOBO directory not found. Skipping."
 	fi
 }
@@ -266,7 +223,7 @@ restart_webserver() {
 }
 
 main() {
-	if [[ "$1" == "--full" || "$1" == "-f" ]]; then
+	if [[ "${1:-}" == "--full" || "${1:-}" == "-f" ]]; then
 		FULL_MODE=1
 	fi
 
@@ -310,7 +267,7 @@ main() {
 		remove_firewall_rules
 		restart_webserver
 	else
-		uninstall_step "OTOBOfiles" "OTOBO files (/opt/otobo)" remove_otobo_files
+		uninstall_step "OTOBOfiles" "OTOBO files (${OTOBO_ROOT:-/opt/otobo})" remove_otobo_files
 		uninstall_step "OTOBouser" "system user 'otobo'" remove_otobo_user
 		uninstall_step "ApacheSite" "Apache site (zzz_otobo)" remove_apache_config
 		uninstall_step "ApacheMods" "Apache OTOBO modules" restore_apache_modules

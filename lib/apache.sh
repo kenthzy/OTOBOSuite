@@ -64,3 +64,14 @@ APACHESSL
 	systemctl reload apache2
 	register_result "Apache Site" "OK" "Site configured for $fqdn"
 }
+
+undo_apache_install() {
+	info "Rolling back Apache installation..."
+	systemctl stop apache2 2>/dev/null || true
+	a2dissite otobo 2>/dev/null || true
+	a2dissite otobo-ssl 2>/dev/null || true
+	a2ensite 000-default 2>/dev/null || true
+	rm -f /etc/apache2/sites-available/otobo.conf /etc/apache2/sites-available/otobo-ssl.conf
+	systemctl reload apache2 2>/dev/null || true
+	register_result "UndoApache" "OK" "Apache OTOBO site disabled"
+}

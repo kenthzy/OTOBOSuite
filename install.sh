@@ -30,8 +30,112 @@ source "$SCRIPT_DIR/lib/backup.sh"
 source "$SCRIPT_DIR/lib/firewall.sh"
 # shellcheck source=lib/security.sh
 source "$SCRIPT_DIR/lib/security.sh"
+# shellcheck source=lib/validation.sh
+source "$SCRIPT_DIR/lib/validation.sh"
+# shellcheck source=lib/deb.sh
+source "$SCRIPT_DIR/lib/deb.sh"
+# shellcheck source=lib/apt_repo.sh
+source "$SCRIPT_DIR/lib/apt_repo.sh"
+
+# Prevent per-module register_result overrides (ssl.sh, backup.sh) from
+# capturing install-step results in wrong namespaces
+register_result() {
+	_registry_register "VALIDATION" "$@"
+}
 
 UNATTENDED=0
+APT_REPO_URL=""
+APT_REPO_GPG_KEY_URL=""
+CHECKPOINT_FILE="/tmp/otobo-install-checkpoints"
+rm -f "$CHECKPOINT_FILE"
+
+checkpoint() { echo "$1" >>"$CHECKPOINT_FILE"; }
+have_checkpoint() { grep -q "$1" "$CHECKPOINT_FILE" 2>/dev/null; }
+last_checkpoint() { tail -1 "$CHECKPOINT_FILE" 2>/dev/null || echo "none"; }
+
+undo_db() {
+	local db_engine="${DB_ENGINE:-mariadb}"
+	local db_name="${DB_NAME:-otobo}"
+	local db_user="${DB_USER:-otobo}"
+	if ! confirm "Drop database '${db_name}' and user '${db_user}'? This cannot be undone."; then
+		info "Skipped: DB cleanup for ${db_name}/${db_user}"
+		return
+	fi
+	if [ "$db_engine" = "postgresql" ]; then
+		undo_postgresql_db "$db_name" "$db_user"
+	else
+		undo_mariadb_db "$db_name" "$db_user"
+	fi
+}
+
+cleanup() {
+	local rc=$?
+	if [ "$rc" -eq 0 ]; then
+		rm -f "$CHECKPOINT_FILE"
+		return
+	fi
+	echo ""
+	echo "========================================"
+	echo "  Installation Failed — Rolling Back"
+	echo "  Last step: $(last_checkpoint)"
+	echo "========================================"
+	echo ""
+
+	# Walk checkpoints in reverse order (from newest to oldest)
+	if have_checkpoint "COMPLETE"; then
+		rm -f "$CHECKPOINT_FILE"
+		return
+	fi
+
+	if have_checkpoint "MONITORING_INSTALLED"; then
+		undo_monitoring
+	fi
+	if have_checkpoint "HARDENING_DONE"; then
+		undo_security
+	fi
+	if have_checkpoint "AI_INSTALLED"; then
+		undo_ai
+	fi
+	if have_checkpoint "WEB_CONFIGURED"; then
+		if [ "${WEB_SERVER:-apache}" = "nginx" ]; then
+			undo_nginx_install
+		else
+			undo_apache_install
+		fi
+	fi
+	if have_checkpoint "SSL_CONFIGURED"; then
+		undo_ssl
+	fi
+	if have_checkpoint "WEB_SERVER_INSTALLED"; then
+		if [ "${WEB_SERVER:-apache}" = "nginx" ]; then
+			systemctl stop otobo-starman 2>/dev/null || true
+			pkg_remove nginx 2>/dev/null || true
+		else
+			pkg_remove apache2 2>/dev/null || true
+		fi
+	fi
+	if have_checkpoint "ADMIN_CONFIGURED"; then
+		info "OTOBO admin user may need manual removal via Console.pl"
+	fi
+	if have_checkpoint "CODE_EXTRACTED"; then
+		if confirm "Remove extracted OTOBO code at ${OTOBO_ROOT:-/opt/otobo}?"; then
+			undo_otobo_install "${OTOBO_ROOT:-/opt/otobo}"
+		else
+			info "Skipped: OTOBO code left at ${OTOBO_ROOT:-/opt/otobo}"
+		fi
+	fi
+	if have_checkpoint "PERL_DEPS"; then
+		info "Perl packages remain installed (safe to keep)"
+	fi
+	if have_checkpoint "DB_CREATED"; then
+		undo_db
+	fi
+
+	warning "Rollback complete. Some items may need manual attention (see above)."
+	rm -f "$CHECKPOINT_FILE"
+}
+
+trap cleanup EXIT
 
 parse_args() {
 	while [[ $# -gt 0 ]]; do
@@ -46,6 +150,22 @@ parse_args() {
 				shift 2
 			else
 				die "Missing config file path after --config"
+			fi
+			;;
+		--apt-repo)
+			if [[ -n "${2:-}" ]]; then
+				APT_REPO_URL="$2"
+				shift 2
+			else
+				die "Missing URL after --apt-repo"
+			fi
+			;;
+		--apt-gpg-key)
+			if [[ -n "${2:-}" ]]; then
+				APT_REPO_GPG_KEY_URL="$2"
+				shift 2
+			else
+				die "Missing URL after --apt-gpg-key"
 			fi
 			;;
 		*)
@@ -190,16 +310,20 @@ prompt_ai() {
 		INSTALL_AI="yes"
 		echo ""
 		echo "  Select AI model:"
-		echo "    1) MiniLM (all-MiniLM-L6-v2) - ~80MB, CPU, default"
-		echo "    2) BERT (bert-base-uncased) - ~440MB, more accurate"
-		echo "    3) Skip model download (download later)"
+		echo "    1) MiniLM (all-MiniLM-L6-v2) - ~80MB, CPU, fastest"
+		echo "    2) DistilBERT (distilbert-base-uncased) - ~260MB, good accuracy"
+		echo "    3) BERT (bert-base-uncased) - ~440MB, more accurate"
+		echo "    4) RoBERTa (roberta-base) - ~500MB, best accuracy"
+		echo "    5) Skip model download (download later)"
 		echo "========================================"
 		local model_choice
 		read -r -p "Select model [1]: " model_choice
 		case "${model_choice:-1}" in
 		1) AI_MODEL="minilm" ;;
-		2) AI_MODEL="bert" ;;
-		3) AI_MODEL="skip" ;;
+		2) AI_MODEL="distilbert" ;;
+		3) AI_MODEL="bert" ;;
+		4) AI_MODEL="roberta" ;;
+		5) AI_MODEL="skip" ;;
 		*) AI_MODEL="minilm" ;;
 		esac
 		AI_QUEUE=$(prompt_with_default "Queue to monitor" "${AI_QUEUE:-Raw}")
@@ -240,7 +364,7 @@ prompt_monitoring() {
 
 echo ""
 echo "========================================"
-echo "  OTOBO 11 Native Installer"
+echo "  OTOBOSuite - OTOBO 11 Installation"
 echo "========================================"
 
 FQDN=$(prompt_with_default "Fully Qualified Domain Name" "$(hostname -f)")
@@ -253,6 +377,8 @@ prompt_ssl
 prompt_ai
 prompt_hardening
 prompt_monitoring
+
+run_system_checks
 
 echo ""
 echo "========================================"
@@ -289,28 +415,41 @@ else
 	install_mariadb
 	configure_mariadb_db "$DB_NAME" "$DB_USER" "$DB_PASS"
 fi
+checkpoint "DB_CREATED"
 
 # 2. Install Perl dependencies
 install_perl_deps "$DB_ENGINE"
+checkpoint "PERL_DEPS"
 
 # 3. Install OTOBO
-install_otobo "${OTOBO_ROOT:-/opt/otobo}" "${OTOBO_USER:-otobo}" "${OTOBO_GROUP:-www-data}"
+if [ -n "$APT_REPO_URL" ]; then
+	info "Installing OTOBO from apt repository: $APT_REPO_URL"
+	apt_repo_install_otobo "$APT_REPO_URL" "$APT_REPO_GPG_KEY_URL"
+	register_result "OTOBO Install" "OK" "OTOBO installed via apt from $APT_REPO_URL"
+else
+	install_otobo "${OTOBO_ROOT:-/opt/otobo}" "${OTOBO_USER:-otobo}" "${OTOBO_GROUP:-www-data}"
+fi
 configure_otobo_db "$DB_ENGINE" "${DB_HOST:-127.0.0.1}" "$DB_PORT" "$DB_NAME" "$DB_USER" "$DB_PASS"
 run_otobo_installer "${OTOBO_ROOT:-/opt/otobo}" "${OTOBO_USER:-otobo}"
+checkpoint "CODE_EXTRACTED"
 
 # 4. Configure admin user
 configure_otobo_admin_user "${OTOBO_ROOT:-/opt/otobo}" "${OTOBO_USER:-otobo}" "$ADMIN_USER" "$ADMIN_PASS" "$ADMIN_EMAIL"
+checkpoint "ADMIN_CONFIGURED"
 
 # 5. Install web server
 dispatch_web_server_install "$WEB_SERVER"
+checkpoint "WEB_SERVER_INSTALLED"
 
 # 6. SSL
 if [ "$SSL_MODE" != "none" ]; then
 	configure_ssl "$SSL_MODE"
 fi
+checkpoint "SSL_CONFIGURED"
 
 # 7. Configure web server
 configure_web_server "$WEB_SERVER" "$FQDN" "${OTOBO_ROOT:-/opt/otobo}" "$SSL_MODE"
+checkpoint "WEB_CONFIGURED"
 
 # 8. AI module
 if [ "$INSTALL_AI" = "yes" ]; then
@@ -319,11 +458,13 @@ if [ "$INSTALL_AI" = "yes" ]; then
 	API_PASS=$(openssl rand -base64 24)
 	install_ai_module "${OTOBO_ROOT:-/opt/otobo}" "${OTOBO_USER:-otobo}" "$FQDN" "$API_PASS" "$AI_MODEL" "$AI_QUEUE" "$AI_POLL_INTERVAL"
 fi
+checkpoint "AI_INSTALLED"
 
 # 9. Security hardening
 if [ "${INSTALL_HARDENING:-no}" = "yes" ]; then
 	run_security_hardening
 fi
+checkpoint "HARDENING_DONE"
 
 # 10. Monitoring
 if [ "${INSTALL_MONITORING:-no}" = "yes" ]; then
@@ -331,11 +472,14 @@ if [ "${INSTALL_MONITORING:-no}" = "yes" ]; then
 	source "$SCRIPT_DIR/lib/monitoring.sh"
 	install_monitoring_stack
 fi
+checkpoint "MONITORING_INSTALLED"
 
 # 11. Backup setup
-setup_backup_dir
+ensure_backup_dir
+checkpoint "BACKUP_SETUP"
 
 validation_summary || die "Installation completed with errors"
+checkpoint "COMPLETE"
 
 echo ""
 echo "========================================"

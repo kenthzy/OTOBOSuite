@@ -6,7 +6,7 @@
 # Run: sudo ./verify.sh
 #############################################
 
-set -e
+set -euo pipefail
 
 source lib/colors.sh
 source lib/banner.sh
@@ -446,6 +446,8 @@ main() {
 	else
 		warning "One or more critical checks failed. Review the report above."
 	fi
+	echo
+	info "Log: $LOGFILE"
 	echo
 
 	exit "$result"

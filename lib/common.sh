@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 
+# shellcheck source=lib/registry.sh
+source "$(dirname "${BASH_SOURCE[0]}")/registry.sh"
+
 VALIDATION_NAMES=()
 VALIDATION_STATUSES=()
 VALIDATION_MESSAGES=()
 
 register_result() {
-	local name="$1"
-	local status="$2"
-	local message="$3"
-	VALIDATION_NAMES+=("$name")
-	VALIDATION_STATUSES+=("$status")
-	VALIDATION_MESSAGES+=("$message")
+	_registry_register "VALIDATION" "$@"
 }
 
 validation_summary() {
@@ -29,17 +27,35 @@ validation_summary() {
 	return $has_failure
 }
 
+LOGFILE="${LOGFILE:-/var/log/otobo-suite-$(date +%Y%m%d-%H%M%S).log}"
+touch "$LOGFILE" 2>/dev/null || true
+
 die() {
-	echo "[FATAL] $*" >&2
+	echo "[FATAL] $*" | tee -a "$LOGFILE" >&2
 	exit 1
 }
 
 info() {
-	echo "[INFO] $*"
+	echo "[INFO] $*" | tee -a "$LOGFILE"
 }
 
 warn() {
-	echo "[WARN] $*" >&2
+	echo "[WARN] $*" | tee -a "$LOGFILE" >&2
+}
+
+success() {
+	echo "[ OK ] $*" | tee -a "$LOGFILE"
+}
+
+error() {
+	echo "[FAIL] $*" | tee -a "$LOGFILE" >&2
+	exit 1
+}
+
+warning() { warn "$@"; }
+
+line() {
+	printf '%*s\n' "${COLUMNS:-60}" '' | tr ' ' '='
 }
 
 prompt_yes_no() {

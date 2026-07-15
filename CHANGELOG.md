@@ -1,59 +1,30 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/),
-and this project adheres to [Semantic Versioning](https://semver.org/).
-
-## [1.0.0] — 2026-07-09
+## [1.0.0] - 2026-07-13
 
 ### Added
-
-- **Phase 6**: Post-installation verification (`verify.sh`)
-  - Apache, MariaDB, Perl, OTOBO, database, permissions, firewall, URL checks
-  - Reuses Phase 2 validation registry and summary report
-  - CI/CD-compatible exit codes (0 = pass, 1 = fail)
-
-- **Phase 5**: Automatic repair (`repair.sh`, 22 functions)
-  - 8 diagnose + 8 repair functions covering all OTOBO components
-  - `--check` flag for diagnostics-only mode
-  - Issue registry with parallel arrays
-
-- **Phase 4**: OTOBO installation (`lib/otobo.sh`, 9 functions)
-  - Download, extract, system user, Apache config, systemd, permissions
-  - MariaDB database setup, Kernel/Config.pm generation
-  - Completion banner with installer URL
-
-- **Phase 3**: Package installation
-  - `lib/apache.sh` — Apache 2.4 + mod_perl + mpm_prefork
-  - `lib/mariadb.sh` — MariaDB, secure installation, OTOBO-optimized config
-  - `lib/perl.sh` — 40+ Perl modules via apt, build-essential, cpanminus
-  - `lib/firewall.sh` — UFW rules, no auto-enable
-
-- **Phase 2**: System validation (`lib/validation.sh`)
-  - Validation results registry with parallel arrays
-  - 9 individual checks (root, OS, internet, RAM, disk, Apache, MariaDB, Perl, OTOBO)
-  - Professional summary report table with PASS/WARN/FAIL/INFO/SKIP
-
-- **Phase 1**: Project framework
-  - Repository structure with modular lib directory
-  - `lib/colors.sh`, `lib/banner.sh`, `lib/functions.sh`
-  - Main installer entry point (`install.sh`)
-  - Helper functions (info, success, warning, error, line, pause, confirm)
-
-- **Lint infrastructure**
-  - `.shellcheckrc` — project-wide ShellCheck configuration
-  - `Makefile` with lint, format, format-check, check targets
-  - `.github/workflows/lint.yml` — GitHub Actions CI
-  - `shfmt` auto-formatting with 4-space indent (`.sh` files)
+- Full OTOBO installation with automated dependency resolution
+- Repair tool with comprehensive diagnostics (20+ checks)
+- Post-installation verification framework
+- Full uninstall with data/config/systemd cleanup
+- Upgrade support across OTOBO versions
+- SSL management (Let's Encrypt + self-signed)
+- Backup/restore with rotation and S3 support
+- PostgreSQL support (automatic detection/migration)
+- nginx + Starman production deployment
+- Config-driven unattended install (`--unattended` / `--config`)
+- Open Ticket AI module: Python env, config, model download, systemd service
+- AI fine-tuning pipeline: ticket export, data prep, HuggingFace Trainer
+- AI dashboard: model stats, prediction stats, HTML generation
+- AI model evaluation: accuracy, speed benchmark, comparison
+- Security hardening: fail2ban, UFW rate limiting, unattended-upgrades
+- Monitoring: Prometheus node_exporter, health check cron
+- Multi-distro support: Ubuntu 22.04, 24.04, Debian 12 (via lib/pkg.sh)
+- CI/CD: GitHub Actions lint + release workflow
+- Vagrant + Ansible provisioning for dev/test
+- Menu-driven interface: install, repair, verify, uninstall, upgrade, SSL, backup, security, AI
 
 ### Changed
-
-- `lib/functions.sh` — extracted validation logic to `lib/validation.sh`
-- `lib/banner.sh` — added TERM guard for non-interactive terminals
-- `VERSION` — updated from empty to `1.0.0`
-
-### Fixed
-
-- All 18 `.sh` files pass ShellCheck (zero warnings)
-- All 18 `.sh` files pass `shfmt` (zero diffs)
+- All functions modularized under lib/*.sh
+- Box-drawing borders replaced with clean `====` style
+- ShellCheck-clean (zero warnings), shfmt-formatted

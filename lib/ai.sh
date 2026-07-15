@@ -8,6 +8,9 @@ OTAI_GROUP="otai"
 OTAI_VENV_DIR="/opt/open-ticket-ai/venv"
 OTAI_LOG_DIR="/var/log/open-ticket-ai"
 
+# shellcheck source=lib/ai_eval.sh
+source "$(dirname "${BASH_SOURCE[0]}")/ai_eval.sh"
+
 setup_python_env() {
 	info "Setting up Python environment..."
 	if ! command -v python3 &>/dev/null; then
@@ -190,7 +193,9 @@ download_ai_model() {
 	local model_name=""
 	case "$model" in
 	"bert") model_name="bert-base-uncased" ;;
-	"mini LM" | "minilm" | "minilm-l6-v2") model_name="sentence-transformers/all-MiniLM-L6-v2" ;;
+	"roberta") model_name="roberta-base" ;;
+	"distilbert") model_name="distilbert-base-uncased" ;;
+	"minilm" | "MiniLM" | "minilm-l6-v2") model_name="sentence-transformers/all-MiniLM-L6-v2" ;;
 	*) model_name="sentence-transformers/all-MiniLM-L6-v2" ;;
 	esac
 
@@ -256,15 +261,92 @@ start_otai() {
 	fi
 }
 
+evaluate_current_model() {
+	run_evaluation
+}
+
+switch_model() {
+	echo ""
+	echo "========================================"
+	echo "  Switch AI Model"
+	echo "========================================"
+	echo "  1) MiniLM (all-MiniLM-L6-v2) - ~80MB"
+	echo "  2) DistilBERT (distilbert-base-uncased) - ~260MB"
+	echo "  3) BERT (bert-base-uncased) - ~440MB"
+	echo "  4) RoBERTa (roberta-base) - ~500MB"
+	echo "  5) Fine-tuned model (if available)"
+	echo "========================================"
+
+	local choice
+	read -r -p "Select model [1]: " choice
+	local model_name=""
+	case "${choice:-1}" in
+	1) model_name="sentence-transformers/all-MiniLM-L6-v2" ;;
+	2) model_name="distilbert-base-uncased" ;;
+	3) model_name="bert-base-uncased" ;;
+	4) model_name="roberta-base" ;;
+	5)
+		if [ -f "${OTAI_FINE_TUNED_DIR}/config.json" ]; then
+			model_name="$OTAI_FINE_TUNED_DIR"
+		else
+			warn "No fine-tuned model found at $OTAI_FINE_TUNED_DIR"
+			return
+		fi
+		;;
+	*) model_name="sentence-transformers/all-MiniLM-L6-v2" ;;
+	esac
+
+	local model_path="${model_name}"
+	if echo "$model_name" | grep -q '/'; then
+		# HuggingFace model ID — check local cache under models dir
+		local cache_name
+		cache_name=$(basename "$model_name")
+		if [ -d "/opt/open-ticket-ai/models/${cache_name}" ]; then
+			model_path="/opt/open-ticket-ai/models/${cache_name}"
+		else
+			download_ai_model "$model_name"
+		fi
+	elif [ ! -d "$model_name" ]; then
+		download_ai_model "$model_name"
+	fi
+
+	sed -i "s|model:.*|model: \"${model_name}\"|" "$OTAI_CONFIG_FILE"
+	systemctl restart open-ticket-ai.service
+	info "Switched to model: $model_name"
+	register_result "ModelSwitch" "OK" "Switched to $model_name"
+}
+
+undo_ai() {
+	info "Rolling back Open Ticket AI..."
+	systemctl stop "$OTAI_SERVICE_NAME" 2>/dev/null || true
+	systemctl disable "$OTAI_SERVICE_NAME" 2>/dev/null || true
+	rm -f "/etc/systemd/system/${OTAI_SERVICE_NAME}.service"
+	rm -rf /opt/open-ticket-ai "$OTAI_CONFIG_DIR" "$OTAI_LOG_DIR"
+	userdel -r "$OTAI_USER" 2>/dev/null || true
+	groupdel "$OTAI_GROUP" 2>/dev/null || true
+	systemctl daemon-reload
+	register_result "UndoAI" "OK" "Open Ticket AI removed"
+}
+
 install_ai_module() {
 	local otobo_root="${1:-/opt/otobo}"
 	local otobo_user="${2:-otobo}"
 	local fqdn="$3"
 	local api_pass="$4"
-	local model="${5:-mini LM}"
+	local model="${5:-minilm}"
 	local queue="${6:-Raw}"
 	local poll_interval="${7:-60}"
 	local api_user="open_ticket_ai"
+
+	# Resolve short model name to HuggingFace ID
+	local model_full=""
+	case "$model" in
+	"bert") model_full="bert-base-uncased" ;;
+	"roberta") model_full="roberta-base" ;;
+	"distilbert") model_full="distilbert-base-uncased" ;;
+	"mini LM" | "minilm" | "minilm-l6-v2") model_full="sentence-transformers/all-MiniLM-L6-v2" ;;
+	*) model_full="sentence-transformers/all-MiniLM-L6-v2" ;;
+	esac
 	local api_email="otai@${fqdn}"
 
 	echo ""
@@ -285,11 +367,11 @@ install_ai_module() {
 	# Install Python packages
 	install_otai_packages
 
-	# Generate config
-	generate_otai_config "$fqdn" "$api_user" "$api_pass" "$queue" "$poll_interval" "$model"
+	# Generate config (use resolved full model name)
+	generate_otai_config "$fqdn" "$api_user" "$api_pass" "$queue" "$poll_interval" "$model_full"
 
 	# Download model
-	download_ai_model "$model"
+	download_ai_model "$model_full"
 
 	# Create and start service
 	create_otai_systemd_service

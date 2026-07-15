@@ -17,7 +17,7 @@ config_value() {
 	local default="$2"
 	local val
 
-	val=$(eval "echo \${${key}:-}" 2>/dev/null)
+	val="${!key:-}"
 	if [[ -n "$val" ]]; then
 		echo "$val"
 	else
@@ -58,12 +58,16 @@ WEB_SERVER="${WEB_SERVER:-apache}"
 FQDN="${FQDN:-$(hostname -f)}"
 SSL_MODE="${SSL_MODE:-none}"
 SSL_EMAIL="${SSL_EMAIL:-}"
+ADMIN_USER="${ADMIN_USER:-admin}"
+ADMIN_PASS="${ADMIN_PASS:-}"
 INSTALL_AI="${INSTALL_AI:-no}"
 AI_MODEL="${AI_MODEL:-minilm}"
 AI_QUEUE="${AI_QUEUE:-Raw}"
 AI_POLL_INTERVAL="${AI_POLL_INTERVAL:-60}"
 INSTALL_HARDENING="${INSTALL_HARDENING:-no}"
 INSTALL_MONITORING="${INSTALL_MONITORING:-no}"
+BACKUP_S3_BUCKET="${BACKUP_S3_BUCKET:-}"
+BACKUP_RSYNC_TARGET="${BACKUP_RSYNC_TARGET:-}"
 EOF
 	if [ -d /etc ]; then
 		cp "$tmp" "$CONFIG_FILE"

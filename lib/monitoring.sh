@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-NODE_EXPORTER_VERSION="1.8.2"
-NODE_EXPORTER_URL="https://github.com/prometheus/node_exporter/releases/download/v${NODE_EXPORTER_VERSION}/node_exporter-${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz"
+NODE_EXPORTER_VERSION="${NODE_EXPORTER_VERSION:-1.8.2}"
+NODE_EXPORTER_URL="${NODE_EXPORTER_URL:-https://github.com/prometheus/node_exporter/releases/download/v${NODE_EXPORTER_VERSION}/node_exporter-${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz}"
 
 install_node_exporter() {
 	info "Installing Prometheus node_exporter v${NODE_EXPORTER_VERSION}..."
@@ -44,11 +44,12 @@ UNIT
 }
 
 configure_otobo_healthcheck() {
+	local otobo_root="${OTOBO_ROOT:-/opt/otobo}"
 	info "Configuring OTOBO health check script..."
 
-	mkdir -p /opt/otobo/scripts
+	mkdir -p "${otobo_root}/scripts"
 
-	cat >/opt/otobo/scripts/health_check.sh <<'SCRIPT'
+	cat >"${otobo_root}/scripts/health_check.sh" <<'SCRIPT'
 #!/usr/bin/env bash
 HEALTH_URL="${1:-http://localhost/otobo/index.pl}"
 EXPECTED="${2:-200}"
@@ -61,10 +62,10 @@ else
     exit 1
 fi
 SCRIPT
-	chmod 755 /opt/otobo/scripts/health_check.sh
-	chown otobo:www-data /opt/otobo/scripts/health_check.sh
+	chmod 755 "${otobo_root}/scripts/health_check.sh"
+	chown otobo:www-data "${otobo_root}/scripts/health_check.sh"
 
-	echo "*/5 * * * * otobo /opt/otobo/scripts/health_check.sh >/dev/null 2>&1" >/etc/cron.d/otobo-health
+	echo "*/5 * * * * otobo ${otobo_root}/scripts/health_check.sh >/dev/null 2>&1" >/etc/cron.d/otobo-health
 
 	register_result "HealthCheck" "OK" "Health check script configured (cron every 5min)"
 }
@@ -76,4 +77,14 @@ install_monitoring_stack() {
 	configure_otobo_healthcheck
 
 	register_result "Monitoring" "OK" "Monitoring stack installed"
+}
+
+undo_monitoring() {
+	info "Rolling back monitoring stack..."
+	systemctl stop node_exporter 2>/dev/null || true
+	systemctl disable node_exporter 2>/dev/null || true
+	rm -f /etc/systemd/system/node_exporter.service /usr/local/bin/node_exporter
+	rm -f /etc/cron.d/otobo-health
+	systemctl daemon-reload
+	register_result "UndoMonitoring" "OK" "Monitoring stack removed"
 }

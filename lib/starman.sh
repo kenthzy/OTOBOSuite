@@ -16,7 +16,8 @@ install_starman() {
 	success "Starman installed."
 
 	info "Creating Starman systemd service..."
-	mkdir -p /run/otobo /opt/otobo/var/log
+	local otobo_root="${OTOBO_ROOT:-/opt/otobo}"
+	mkdir -p /run/otobo "${otobo_root}/var/log"
 
 	cat >/etc/systemd/system/otobo-starman.service <<-UNIT
 		[Unit]
@@ -29,14 +30,14 @@ install_starman() {
 		Type=simple
 		User=otobo
 		Group=www-data
-		WorkingDirectory=/opt/otobo
+		WorkingDirectory=${otobo_root}
 		RuntimeDirectory=otobo
-		ExecStart=/usr/bin/starman --listen :5000 --workers 4 --pid /run/otobo/starman.pid /opt/otobo/script/psgi-bin/otobo.psgi
+		ExecStart=/usr/bin/starman --listen :5000 --workers 4 --pid /run/otobo/starman.pid ${otobo_root}/script/psgi-bin/otobo.psgi
 		ExecReload=/bin/kill -HUP \\\$MAINPID
 		Restart=always
 		RestartSec=10
-		StandardOutput=append:/opt/otobo/var/log/starman.log
-		StandardError=append:/opt/otobo/var/log/starman.log
+		StandardOutput=append:${otobo_root}/var/log/starman.log
+		StandardError=append:${otobo_root}/var/log/starman.log
 
 		[Install]
 		WantedBy=multi-user.target
